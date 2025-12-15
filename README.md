@@ -93,6 +93,6 @@ Below is the workflow for the repository:
 </p>
 
 ## Authors
-**Yarong Chen, MISU**
-**Swapan Mallick, SMHI**
+**Yarong Chen, MISU**;
+**Swapan Mallick, SMHI**;
 **Daniel Y, SMHI**
