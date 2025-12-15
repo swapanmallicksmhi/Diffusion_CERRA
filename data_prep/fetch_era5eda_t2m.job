@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+#SBATCH --output=era5eda.out
+#SBATCH --error=era5eda.out
+#SBATCH --job-name=era5eda_data
+#SBATCH --qos=nf
+#SBATCH --time=24:00:00
+module load conda
+mamba activate climate
+#
+python3 fetch_err5eda_t2m_nc_ens.py
