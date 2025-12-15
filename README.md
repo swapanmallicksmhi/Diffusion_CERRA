@@ -83,7 +83,7 @@ diffusion
     ├── Train_Main.py
     └── Sample_Main.py
 
-
+```
 ## Workflow Diagram
 
 Below is the workflow for the repository:
