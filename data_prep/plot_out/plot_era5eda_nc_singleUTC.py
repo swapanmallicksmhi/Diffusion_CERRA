@@ -44,158 +44,207 @@ Part of
 -------
 Diffusion_CERRA: CERRA and ERA5-EDA Ensemble Analysis and Diffusion Modeling Framework
 """
-
 import xarray as xr
 import matplotlib.pyplot as plt
-import cartopy.crs as ccrs
-import cartopy.feature as cfeature
 import numpy as np
 import os
+import time
 
-# Read the NetCDF files
+
 filename1 = "cerra_t2m_points_2020010100.nc"
 filename2 = "era5eda_t2m_points_2020010100.nc"
 
-ds_ce = xr.open_dataset(filename1)
-ds_er = xr.open_dataset(filename2)
-
-# Extract data from both datasets
-data_mean_ce = ds_ce['t2m_mean']
-data_sd_ce = ds_ce['t2m_std']
-data_mean_er = ds_er['t2m_mean']
-data_sd_er = ds_er['t2m_std']
-
-# Get timestamp from filename
+start_time = time.time()
 def extract_timestamp(filename):
     basename = os.path.basename(filename)
     name_without_ext = os.path.splitext(basename)[0]
     return name_without_ext[-10:]
-#
+
 timestamp = extract_timestamp(filename2)
+print(f"Timestamp extracted: {timestamp}")
 
-print(f"Timestamp extracted from filename: {timestamp}")
+DOMAIN = {
+    'lon_min': -11.0,
+    #'lon_min': -20.0,
+    #'lon_max': 40.0,
+    'lon_max': 30.0,
+    'lat_min': 35.0,
+    'lat_max': 72.0
+}
 
-# --- FIGURE 1: MEAN TEMPERATURE COMPARISON ---
-fig1, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5))
+print(f"Using fixed domain: Lon {DOMAIN['lon_min']} to {DOMAIN['lon_max']}, "
+      f"Lat {DOMAIN['lat_min']} to {DOMAIN['lat_max']}")
 
-# Plot settings for mean temperature
-vmin_mean, vmax_mean = 200, 300
-label_mean = 'Temperature (K)'
-cmap_mean = 'jet'
+# Load data 
+ds_ce = xr.open_dataset(filename1, chunks={'points': 1000})
+ds_er = xr.open_dataset(filename2, chunks={'points': 1000})
 
-# CERRA Mean plot on the left
-lats_ce_mean = data_mean_ce.latitude.values
-lons_ce_mean = data_mean_ce.longitude.values
-values_ce_mean = data_mean_ce.values
+# Extract data 
+print("Extracting data...")
+data_mean_ce = ds_ce['t2m_mean'].load()
+data_sd_ce = ds_ce['t2m_std'].load()
+data_mean_er = ds_er['t2m_mean'].load()
+data_sd_er = ds_er['t2m_std'].load()
 
-valid_mask_ce_mean = ~np.isnan(values_ce_mean)
-if np.any(valid_mask_ce_mean):
-    lons_valid_ce_mean = lons_ce_mean[valid_mask_ce_mean]
-    lats_valid_ce_mean = lats_ce_mean[valid_mask_ce_mean]
-    values_valid_ce_mean = values_ce_mean[valid_mask_ce_mean]
-    
-    scatter1 = ax1.scatter(lons_valid_ce_mean, lats_valid_ce_mean, c=values_valid_ce_mean,
-                          cmap=cmap_mean, s=10, alpha=0.7,
-                          vmin=vmin_mean, vmax=vmax_mean)
-    ax1.set_xlabel('Longitude')
-    ax1.set_ylabel('Latitude')
-    ax1.set_title('CERRA t2m Mean')
-    ax1.grid(True, alpha=0.3)
-    # Add colorbar to CERRA plot
-    plt.colorbar(scatter1, ax=ax1, orientation='horizontal', pad=0.05, label=label_mean)
+def get_valid_data_within_domain(data_array, domain):
+    values = data_array.values
+    lats = data_array.latitude.values
+    lons = data_array.longitude.values
 
-# ERA5EDA Mean plot on the right
-lats_er_mean = data_mean_er.latitude.values
-lons_er_mean = data_mean_er.longitude.values
-values_er_mean = data_mean_er.values
+    # Create masks
+    valid_mask = ~np.isnan(values)
+    domain_mask = (
+        (lats >= domain['lat_min']) & (lats <= domain['lat_max']) &
+        (lons >= domain['lon_min']) & (lons <= domain['lon_max'])
+    )
 
-valid_mask_er_mean = ~np.isnan(values_er_mean)
-if np.any(valid_mask_er_mean):
-    lons_valid_er_mean = lons_er_mean[valid_mask_er_mean]
-    lats_valid_er_mean = lats_er_mean[valid_mask_er_mean]
-    values_valid_er_mean = values_er_mean[valid_mask_er_mean]
-    
-    scatter2 = ax2.scatter(lons_valid_er_mean, lats_valid_er_mean, c=values_valid_er_mean,
-                          cmap=cmap_mean, s=10, alpha=0.7,
-                          vmin=vmin_mean, vmax=vmax_mean)
-    ax2.set_xlabel('Longitude')
-    ax2.set_ylabel('Latitude')
-    ax2.set_title('ERA5-EDA t2m Mean')
-    ax2.grid(True, alpha=0.3)
-    
-    # Add colorbar to ERA5 plot
-    plt.colorbar(scatter2, ax=ax2, orientation='horizontal', pad=0.05, label=label_mean)
+    # Combined mask: valid AND within domain
+    combined_mask = valid_mask & domain_mask
 
-plt.suptitle(f'Mean Temperature Comparison - {timestamp}', fontsize=14, fontweight='bold')
-plt.tight_layout()
+    if np.any(combined_mask):
+        return (
+            lons[combined_mask],
+            lats[combined_mask],
+            values[combined_mask],
+            combined_mask
+        )
+    return (None, None, None, combined_mask)
 
-# Save the mean comparison plot
+print("Processing CERRA data within domain...")
+# 
+cerra_mean_data = get_valid_data_within_domain(data_mean_ce, DOMAIN)
+cerra_sd_data = get_valid_data_within_domain(data_sd_ce, DOMAIN)
+
+print("Processing ERA5 data within domain...")
+# 
+era_mean_data = get_valid_data_within_domain(data_mean_er, DOMAIN)
+era_sd_data = get_valid_data_within_domain(data_sd_er, DOMAIN)
+
+# 
+PLOT_PARAMS = {
+    'mean': {'vmin': 200, 'vmax': 300, 'cmap': 'jet', 'label': 'Temperature (K)'},
+    'sd': {'vmin': 0, 'vmax': 3, 'cmap': 'jet', 'label': 'Standard Deviation (K)'}
+}
+
+def create_scatter_plot_fixed_domain(ax, lons_valid, lats_valid, values_valid, 
+                                    plot_type, title, add_colorbar=True):
+    """Create a scatter plot with fixed domain boundaries"""
+    if lons_valid is not None and len(lons_valid) > 0:
+        params = PLOT_PARAMS[plot_type]
+
+        # Create scatter plot
+        scatter = ax.scatter(lons_valid, lats_valid, c=values_valid,
+                           cmap=params['cmap'], s=5, alpha=0.7,
+                           vmin=params['vmin'], vmax=params['vmax'])
+
+        ax.set_xlabel('Longitude')
+        ax.set_ylabel('Latitude')
+        ax.set_title(title)
+
+        # Set fixed domain boundaries
+        ax.set_xlim(DOMAIN['lon_min'], DOMAIN['lon_max'])
+        ax.set_ylim(DOMAIN['lat_min'], DOMAIN['lat_max'])
+
+        # Add grid
+        ax.grid(True, alpha=0.3, linestyle='--')
+
+        # Add colorbar if requested
+        if add_colorbar:
+            cbar = plt.colorbar(scatter, ax=ax, orientation='horizontal',
+                              pad=0.05, label=params['label'])
+            cbar.solids.set(alpha=1)
+        
+        # Count points 
+        points_count = len(lons_valid)
+
+        # Add statistics text box
+        if points_count > 0:
+            stats_text = f'Points: {points_count}\n'
+            stats_text += f'Min: {values_valid.min():.2f}\n'
+            stats_text += f'Max: {values_valid.max():.2f}\n'
+            stats_text += f'Mean: {values_valid.mean():.2f}'
+
+            #ax.text(0.02, 0.98, stats_text, transform=ax.transAxes,
+            #       fontsize=8, verticalalignment='top',
+            #       bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
+
+        return True, points_count
+    else:
+        #ax.text(0.5, 0.5, 'No valid data\nwithin domain', ha='center', va='center',
+        #       transform=ax.transAxes, fontsize=12)
+        ax.set_title(f'{title} - No Data')
+
+        # Still set the domain boundaries
+        ax.set_xlim(DOMAIN['lon_min'], DOMAIN['lon_max'])
+        ax.set_ylim(DOMAIN['lat_min'], DOMAIN['lat_max'])
+        ax.grid(True, alpha=0.3, linestyle='--')
+
+        return False, 0
+
+# --- FIGURE 1: 
+print("Creating mean temperature comparison plot...")
+fig1, (ax1, ax2) = plt.subplots(1, 2, figsize=(10, 5), constrained_layout=True)
+# 
+lons_ce_mean, lats_ce_mean, vals_ce_mean, _ = cerra_mean_data
+lons_er_mean, lats_er_mean, vals_er_mean, _ = era_mean_data
+
+# 
+plot1_success, ce_mean_count = create_scatter_plot_fixed_domain(
+    ax1, lons_ce_mean, lats_ce_mean, vals_ce_mean,
+    'mean', 'CERRA t2m Mean'
+)
+
+plot2_success, er_mean_count = create_scatter_plot_fixed_domain(
+    ax2, lons_er_mean, lats_er_mean, vals_er_mean,
+    'mean', 'ERA5-EDA t2m Mean'
+)
+
+plt.suptitle(f'Mean Temperature Comparison - {timestamp}\n'
+            f'Domain: Lon {DOMAIN["lon_min"]}° to {DOMAIN["lon_max"]}°, '
+            f'Lat {DOMAIN["lat_min"]}° to {DOMAIN["lat_max"]}°',
+            fontsize=14, fontweight='bold')
+
+# Save with optimized settings
 mean_output_filename = f"CerraEra_Mean_{timestamp}.png"
 plt.savefig(mean_output_filename, dpi=100, bbox_inches='tight')
 print(f"Mean comparison saved as: {mean_output_filename}")
-#plt.show()
+plt.close(fig1)
 
-# --- FIGURE 2: STANDARD DEVIATION COMPARISON ---
-fig2, (ax3, ax4) = plt.subplots(1, 2, figsize=(12, 5))
+# --- FIGURE 2: 
+print("Creating standard deviation comparison plot...")
+fig2, (ax3, ax4) = plt.subplots(1, 2, figsize=(10, 5), constrained_layout=True)
 
-# Plot settings for standard deviation
-vmin_sd, vmax_sd = 0, 3
-label_sd = 'Standard Deviation (K)'
-cmap_sd = 'jet'
+# 
+lons_ce_sd, lats_ce_sd, vals_ce_sd, _ = cerra_sd_data
+lons_er_sd, lats_er_sd, vals_er_sd, _ = era_sd_data
 
-# CERRA Standard Deviation plot on the left
-lats_ce_sd = data_sd_ce.latitude.values
-lons_ce_sd = data_sd_ce.longitude.values
-values_ce_sd = data_sd_ce.values
+# 
+plot3_success, ce_sd_count = create_scatter_plot_fixed_domain(
+    ax3, lons_ce_sd, lats_ce_sd, vals_ce_sd,
+    'sd', 'CERRA t2m Standard Deviation'
+)
 
-valid_mask_ce_sd = ~np.isnan(values_ce_sd)
-if np.any(valid_mask_ce_sd):
-    lons_valid_ce_sd = lons_ce_sd[valid_mask_ce_sd]
-    lats_valid_ce_sd = lats_ce_sd[valid_mask_ce_sd]
-    values_valid_ce_sd = values_ce_sd[valid_mask_ce_sd]
-    
-    scatter3 = ax3.scatter(lons_valid_ce_sd, lats_valid_ce_sd, c=values_valid_ce_sd,
-                          cmap=cmap_sd, s=10, alpha=0.7,
-                          vmin=vmin_sd, vmax=vmax_sd)
-    ax3.set_xlabel('Longitude')
-    ax3.set_ylabel('Latitude')
-    ax3.set_title('CERRA t2m Standard Deviation')
-    ax3.grid(True, alpha=0.3)
-    
-    # Add colorbar to CERRA SD plot
-    plt.colorbar(scatter3, ax=ax3, orientation='horizontal', pad=0.05, label=label_sd)
+plot4_success, er_sd_count = create_scatter_plot_fixed_domain(
+    ax4, lons_er_sd, lats_er_sd, vals_er_sd,
+    'sd', 'ERA5-EDA t2m Standard Deviation'
+)
 
-# ERA5EDA Standard Deviation plot on the right
-lats_er_sd = data_sd_er.latitude.values
-lons_er_sd = data_sd_er.longitude.values
-values_er_sd = data_sd_er.values
+plt.suptitle(f'Standard Deviation Comparison - {timestamp}\n'
+            f'Domain: Lon {DOMAIN["lon_min"]}° to {DOMAIN["lon_max"]}°, '
+            f'Lat {DOMAIN["lat_min"]}° to {DOMAIN["lat_max"]}°',
+            fontsize=14, fontweight='bold')
 
-valid_mask_er_sd = ~np.isnan(values_er_sd)
-if np.any(valid_mask_er_sd):
-    lons_valid_er_sd = lons_er_sd[valid_mask_er_sd]
-    lats_valid_er_sd = lats_er_sd[valid_mask_er_sd]
-    values_valid_er_sd = values_er_sd[valid_mask_er_sd]
-    
-    scatter4 = ax4.scatter(lons_valid_er_sd, lats_valid_er_sd, c=values_valid_er_sd,
-                          cmap=cmap_sd, s=10, alpha=0.7,
-                          vmin=vmin_sd, vmax=vmax_sd)
-    ax4.set_xlabel('Longitude')
-    ax4.set_ylabel('Latitude')
-    ax4.set_title('ERA5-EDA t2m Standard Deviation')
-    ax4.grid(True, alpha=0.3)
-    
-    # Add colorbar to ERA5 SD plot
-    plt.colorbar(scatter4, ax=ax4, orientation='horizontal', pad=0.05, label=label_sd)
-
-plt.suptitle(f'Standard Deviation Comparison - {timestamp}', fontsize=14, fontweight='bold')
-plt.tight_layout()
-
-# Save the standard deviation comparison plot
+# 
 sd_output_filename = f"CerraEra_SD_{timestamp}.png"
 plt.savefig(sd_output_filename, dpi=100, bbox_inches='tight')
 print(f"Standard deviation comparison saved as: {sd_output_filename}")
-#plt.show()
+plt.close(fig2)
 
-# Close the datasets
+# 
 ds_ce.close()
 ds_er.close()
+
+#
+end_time = time.time()
+runtime = end_time - start_time
+print(f"\nTotal runtime: {runtime:.2f} seconds")
