@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+#SBATCH --output=cerra_DYN.out
+#SBATCH --error=cerra_DYN.out
+#SBATCH --job-name=DYN_cerra_dat
+#SBATCH --qos=nf
+#SBATCH --time=24:00:00
+module load conda
+mamba activate climate
+#
+python3 fetch_cerra_t2m_5km.py
