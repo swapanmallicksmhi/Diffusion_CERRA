@@ -50,8 +50,8 @@ def analyze_datasets(HH):
     return (cerra_lat_min, cerra_lat_max, cerra_lon_min, cerra_lon_max,
             era_lat_min, era_lat_max, era_lon_min, era_lon_max)
 
-def extract_cerra_domain_points(cerra_file, desired_lat_min=35.0, desired_lat_max=72.0,
-                             desired_lon_min=-20.0, desired_lon_max=40.0):
+def extract_cerra_domain_points(cerra_file, desired_lat_min, desired_lat_max,
+                               desired_lon_min, desired_lon_max):
     ds = xr.open_dataset(cerra_file, decode_times=False)
     
     if float(ds["longitude"].max()) > 180:
@@ -333,6 +333,7 @@ def plot_point_data(title, data, filename, timestamp, domain, is_std=False):
     
     fig = plt.figure(figsize=(10, 10))
     ax = plt.axes(projection=ccrs.PlateCarree())
+    ax.set_aspect('equal', adjustable='box')
     
     ax.add_feature(cfeature.COASTLINE, linewidth=0.8)
     ax.add_feature(cfeature.BORDERS, linewidth=0.5, alpha=0.5)
@@ -457,7 +458,8 @@ def create_comparisons(means_cerra, stds_cerra, timestamps_cerra,
 def plot_comparison(mean_cerra, mean_era, timestamp, output_dir, domain):
     lat_min, lat_max, lon_min, lon_max = domain
     
-    fig, axes = plt.subplots(1, 3, figsize=(12, 4),
+    #fig, axes = plt.subplots(1, 3, figsize=(12, 4),
+    fig, axes = plt.subplots(1, 3, figsize=(12, 12),
                             subplot_kw={'projection': ccrs.PlateCarree()})
     
     titles = ['cerra', 'era5eda', 'difference']
@@ -514,8 +516,13 @@ def main():
     
     (cerra_lat_min, cerra_lat_max, cerra_lon_min, cerra_lon_max,
      era_lat_min, era_lat_max, era_lon_min, era_lon_max) = analyze_datasets(HH)
-    
-    desired_domain = (35.0, 72.0, -20.0, 40.0)
+    #
+    # Here choose the domain area (Modify:Date 27 January, 2026)
+    # lat_min=35.0; lat_max=72.0; lon_min= -20.1; lon_max=40.0   # Domian over Europe 
+    # lat_min=49.8; lat_max=71.0; lon_min= -1.1; lon_max=30.0    # Domain over Nordic (MetCoOP)
+    #
+    lat_min=49.8; lat_max=71.0; lon_min= -1.1; lon_max=30.0 
+    desired_domain = (lat_min, lat_max, lon_min, lon_max)
     lat_points, lon_points, domain_mask, actual_lat_min, actual_lat_max, actual_lon_min, actual_lon_max = extract_cerra_domain_points(
         cerra_file, *desired_domain
     )
@@ -524,10 +531,10 @@ def main():
     
     extended_lats, extended_lons = create_extended_era5_grid(
         era_file,
-        target_lat_min=min(actual_lat_min, 35.0),
-        target_lat_max=max(actual_lat_max, 72.0),
-        target_lon_min=min(actual_lon_min, -20.0),
-        target_lon_max=max(actual_lon_max, 40.0),
+        target_lat_min=min(actual_lat_min, lat_min),
+        target_lat_max=max(actual_lat_max, lat_max),
+        target_lon_min=min(actual_lon_min, lon_min),
+        target_lon_max=max(actual_lon_max, lon_max),
         resolution=0.25
     )
     # Output folder name SM 
