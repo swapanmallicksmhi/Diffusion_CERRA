@@ -6,20 +6,19 @@ import numpy as np
 import matplotlib.pyplot as plt
 import cartopy.crs as ccrs
 import cartopy.feature as cfeature
-from helpers import find_matching_files, open_ds, crop_cerra , era5_to_cerra
-from helpers import plot_all
+from helpers import find_matching_files, open_ds, crop_cerra, era5_to_cerra
+from helpers import plot_all, plot_statistics
 
-
-# ==========================================
-# 3. MAIN EXECUTION BLOCK
-# ==========================================
 if __name__ == "__main__":
     # --- Configuration ---
     CERRA_DIR = '/lus/h2resw01/scratch/swe4281/CERRA_DATA2026/CERRA_DATA/'
     ERA5_DIR  = '/lus/h2resw01/scratch/swe4281/CERRA_DATA2026/ERA5EDA_DATA/'
-    OUTPUT_DIR = './output_plots' # Directory to save images
+    OUTPUT_DIR = '../output_plots'
+    ZARR_PATH = '../output_data.zarr'
 
-    # Create output directory if it doesn't exist
+    SAVE_ERA5_MEMBERS = True   
+    SAVE_CERRA_MEMBERS = True 
+
     if not os.path.exists(OUTPUT_DIR):
         os.makedirs(OUTPUT_DIR)
     
@@ -27,58 +26,118 @@ if __name__ == "__main__":
     MONTHS = ["10"]
     CYCLES = ['0000', '0600', '1200', '1800'] 
     
-    # Area definition
     LAT_MIN, LAT_MAX = 50, 73
     LON_MIN, LON_MAX = 1, 30
     GRID_SIZE = 128
 
-    # 1. Find Files
     pairs = find_matching_files(CERRA_DIR, ERA5_DIR, YEARS, MONTHS, CYCLES)
 
     if not pairs:
         print("No matching files found.")
     else:
-        # 2. Loop through every found pair
         for cerra_path, era5_path in pairs:
             print(f"\nProcessing: {os.path.basename(cerra_path)}")
             
             try:
                 # Load Data
                 ds_c = xr.open_dataset(cerra_path)
-                ds_c['longitude'] = ((ds_c.longitude + 180) % 360) - 180 # Normalize
+                ds_c['longitude'] = ((ds_c.longitude + 180) % 360) - 180 
                 
                 ds_e = xr.open_dataset(era5_path)
-                ds_e['longitude'] = ((ds_e.longitude + 180) % 360) - 180 # Normalize
+                ds_e['longitude'] = ((ds_e.longitude + 180) % 360) - 180
 
-                # Crop and Interpolate
+                # =========================================================
+                #  FIX: DROP EXPVER TO PREVENT MERGE CONFLICTS
+                # =========================================================
+                if 'expver' in ds_e.coords or 'expver' in ds_e.data_vars:
+                    try:
+                        ds_e = ds_e.drop_vars('expver')
+                    except Exception:
+                        pass
+                
+                if 'expver' in ds_c.coords or 'expver' in ds_c.data_vars:
+                     ds_c = ds_c.drop_vars('expver')
+
+                # Crop and Interpolate (Updated function enforces coordinates)
                 ds_c_sub = crop_cerra(ds_c, LAT_MIN, LAT_MAX, LON_MIN, LON_MAX, GRID_SIZE)
                 ds_e_on_c, _ = era5_to_cerra(ds_e, ds_c_sub)
                 
-                # --- RANDOM SELECTION LOGIC ---
+                # ====================================================
+                # A. CALCULATE STATISTICS
+                # ====================================================
+                cerra_mean = ds_c_sub.mean(dim='number', keep_attrs=True)
+                cerra_std  = ds_c_sub.std(dim='number', keep_attrs=True)
+                
+                era5_mean  = ds_e_on_c.mean(dim='number', keep_attrs=True)
+                era5_std   = ds_e_on_c.std(dim='number', keep_attrs=True)
+
+                # ====================================================
+                # B. PLOT STATISTICS
+                # ====================================================
+                time_val = ds_c_sub.valid_time.isel(valid_time=0).values
+                time_str_file = str(time_val)[:16].replace(':', '').replace('-', '').replace('T', '_')
+                
+                stats_filename = f"stats_{time_str_file}.png"
+                stats_save_path = os.path.join(OUTPUT_DIR, stats_filename)
+                
+                plot_statistics(cerra_mean, cerra_std, era5_mean, era5_std, 
+                                title_suffix=str(time_val)[:13], 
+                                save_path=stats_save_path)
+
+                # ====================================================
+                # C. RANDOM MEMBER PLOT
+                # ====================================================
                 n_members = ds_c_sub.sizes['number']
                 n_times = ds_c_sub.sizes['valid_time']
-                
-                # Pick random indices
                 rand_member = random.randint(0, n_members - 1)
                 rand_time_idx = random.randint(0, n_times - 1)
                 
                 idx = {'number': rand_member, 'valid_time': rand_time_idx}
-                
-                # Get string info for filename
-                time_val = ds_c_sub.valid_time.isel(valid_time=rand_time_idx).values
-                # Format: YYYYMMDD_HHMM
-                time_str_file = str(time_val)[:16].replace(':', '').replace('-', '').replace('T', '_')
-                cycle_str = os.path.basename(cerra_path).split('_')[-1].replace('.nc', '')
-                
-                # Generate Filename
-                # Example: plot_20241015_0600_cycle0000_mem05.png
-                filename = f"plot_{time_str_file}_cycle{cycle_str}_mem{rand_member:02d}.png"
+                filename = f"plot_{time_str_file}_mem{rand_member:02d}.png"
                 save_full_path = os.path.join(OUTPUT_DIR, filename)
-                
                 plot_title = f"(Mb:{rand_member}, {str(time_val)[:16]})"
                 
-                # Plot and Save
                 plot_all(ds_e_on_c, ds_c_sub, idx, title_suffix=plot_title, save_path=save_full_path)
+
+                # ====================================================
+                # D. INCREMENTAL ZARR SAVING
+                # ====================================================
+                def rename_vars(ds, suffix):
+                    return ds.rename({v: f"{v}_{suffix}" for v in ds.data_vars})
+
+                ds_save_list = []
+
+                # Always add Mean and Std
+                ds_save_list.append(rename_vars(cerra_mean, "cerra_mean"))
+                ds_save_list.append(rename_vars(cerra_std, "cerra_std"))
+                ds_save_list.append(rename_vars(era5_mean, "era5_mean"))
+                ds_save_list.append(rename_vars(era5_std, "era5_std"))
+
+                # Conditionally add Full Members
+                if SAVE_CERRA_MEMBERS:
+                    ds_save_list.append(rename_vars(ds_c_sub, "cerra_members"))
+                
+                if SAVE_ERA5_MEMBERS:
+                    ds_save_list.append(rename_vars(ds_e_on_c, "era5_members"))
+
+
+                # Merge
+                ds_to_save = xr.merge(ds_save_list, compat='no_conflicts')
+
+                ## Sort
+                # 
+                ds_to_save = ds_to_save.sortby('valid_time')
+                
+                # --- FIX: Chunk on 'y' and 'x' dimensions ---
+                ds_to_save = ds_to_save.chunk({'valid_time': 1, 'y': -1, 'x': -1})
+
+                # Write to Zarr
+                if not os.path.exists(ZARR_PATH):
+                    print(f"Initializing Zarr store at {ZARR_PATH}")
+                    ds_to_save.to_zarr(ZARR_PATH, mode='w', zarr_format=2)
+                else:
+                    print(f"Appending to Zarr store at {ZARR_PATH}")
+                    ds_to_save.to_zarr(ZARR_PATH, mode='a', append_dim='valid_time', zarr_format=2)
                 
                 ds_c.close()
                 ds_e.close()
