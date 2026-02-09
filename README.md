@@ -83,12 +83,16 @@ diffusion
     ├── Train_Main.py
     └── Sample_Main.py
 
-
+```
 ## Workflow Diagram
 
 Below is the workflow for the repository:
 
+<p align="center">
+  <img src="docs/flow1.png" alt="Workflow Diagram" width="300">
+</p>
+
 ## Authors
-**Yarong Chen, MISU**
-**Swapan Mallick, SMHI**
+**Yarong Chen, MISU**;
+**Swapan Mallick, SMHI**;
 **Daniel Y, SMHI**
