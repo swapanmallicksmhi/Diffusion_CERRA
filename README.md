@@ -91,4 +91,4 @@ Below is the workflow for the repository:
 ## Authors
 **Yarong Chen, MISU**
 **Swapan Mallick, SMHI**
-**Daniel Y, SMHI**
+**Daniel Yazgi, SMHI**
