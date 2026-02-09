@@ -20,6 +20,10 @@ It computes:
 - **Geographical plots over Europe**
 - **NetCDF outputs** for downstream analysis
 
+Study domain can be selected from
+- ** Domain Over Europe - lat_min=35.0; lat_max=72.0; lon_min= -20.1; lon_max=40.0
+- ** Domain over Nordic (MetCoOP)- lat_min=49.8; lat_max=71.0; lon_min= -1.1; lon_max=30.0
+
 The system is designed for **scientific robustness**, **HPC scalability**, and **easy extensibility**.
 
 ---
