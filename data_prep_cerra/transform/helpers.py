@@ -33,6 +33,54 @@ def find_matching_files(cerra_dir, era5_dir, years, months, cycles):
 
     return matched_pairs
 
+def save_to_zarr(zarr_path, cerra_mean, cerra_std, era5_mean, era5_std, 
+                 ds_cerra=None, ds_era5=None, 
+                 save_cerra_members=False, save_era5_members=False):
+    """
+    Merges statistical and member data, chunks it, and saves/appends to Zarr.
+    """
+
+    def rename_vars(ds, suffix):
+        """Internal helper to rename variables with a suffix to avoid collisions."""
+        return ds.rename({v: f"{v}_{suffix}" for v in ds.data_vars})
+
+    ds_save_list = []
+
+    # 1. Always add Mean and Std
+    ds_save_list.append(rename_vars(cerra_mean, "cerra_mean"))
+    ds_save_list.append(rename_vars(cerra_std, "cerra_std"))
+    ds_save_list.append(rename_vars(era5_mean, "era5_mean"))
+    ds_save_list.append(rename_vars(era5_std, "era5_std"))
+
+    # 2. Conditionally add Full Members
+    if save_cerra_members and ds_cerra is not None:
+        ds_save_list.append(rename_vars(ds_cerra, "cerra_members"))
+    
+    if save_era5_members and ds_era5 is not None:
+        ds_save_list.append(rename_vars(ds_era5, "era5_members"))
+
+    # 3. Merge
+    # compat='no_conflicts' preserves metadata and allows merging 
+    # even if some coords are slightly different (within tolerance)
+    ds_to_save = xr.merge(ds_save_list, compat='no_conflicts')
+
+    # 4. Sort
+    ds_to_save = ds_to_save.sortby('valid_time')
+    
+    # 5. Chunk on 'y' and 'x' dimensions
+    # valid_time=1 allows efficient appending over time
+    ds_to_save = ds_to_save.chunk({'valid_time': 1, 'y': -1, 'x': -1})
+
+    # 6. Write to Zarr
+    if not os.path.exists(zarr_path):
+        print(f"Initializing Zarr store at {zarr_path}")
+        ds_to_save.to_zarr(zarr_path, mode='w', zarr_format=2)
+    else:
+        print(f"Appending to Zarr store at {zarr_path}")
+        # append_dim must match the dimension you are extending
+        ds_to_save.to_zarr(zarr_path, mode='a', append_dim='valid_time', zarr_format=2)
+
+        
 # ==========================================
 # 2. PROCESSING FUNCTIONS
 # ==========================================

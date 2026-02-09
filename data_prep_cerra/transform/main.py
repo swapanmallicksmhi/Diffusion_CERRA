@@ -1,13 +1,8 @@
 import os
-import glob
 import random
 import xarray as xr
-import numpy as np
-import matplotlib.pyplot as plt
-import cartopy.crs as ccrs
-import cartopy.feature as cfeature
-from helpers import find_matching_files, open_ds, crop_cerra, era5_to_cerra
-from helpers import plot_all, plot_statistics
+from helpers import find_matching_files, crop_cerra, era5_to_cerra
+from helpers import plot_all, plot_statistics, save_to_zarr  # Imported new function
 import argparse
 
 
@@ -24,7 +19,7 @@ def parse_args():
                         help="Output Zarr store")
 
     parser.add_argument("--cerra-members", type=bool, default=False,
-                        help="Incluude Cerra members")
+                        help="Include Cerra members")
     
     parser.add_argument("--era5-members", type=bool, default=False,
                         help="Include Era5 members")
@@ -32,20 +27,19 @@ def parse_args():
     return parser.parse_args()
 
 
- 
-
-
 if __name__ == "__main__":
     # --- Configuration ---
     args = parse_args()
  
-    # --- Configuration ---
     CERRA_DIR = args.cerra_dir
     ERA5_DIR  = args.era5_dir
     OUTPUT_DIR = args.output_dir
     ZARR_PATH  = args.zarr_path
-    SAVE_CERRA_MEMBERS = args.era5_members 
-    SAVE_ERA5_MEMBERS = args.cerra_members
+    
+    # Correction: Assigned args.cerra_members to CERRA and args.era5 to ERA5
+    SAVE_CERRA_MEMBERS = args.cerra_members 
+    SAVE_ERA5_MEMBERS = args.era5_members
+
     if not os.path.exists(OUTPUT_DIR):
         os.makedirs(OUTPUT_DIR)
     
@@ -85,7 +79,7 @@ if __name__ == "__main__":
                 if 'expver' in ds_c.coords or 'expver' in ds_c.data_vars:
                      ds_c = ds_c.drop_vars('expver')
 
-                # Crop and Interpolate (Updated function enforces coordinates)
+                # Crop and Interpolate
                 ds_c_sub = crop_cerra(ds_c, LAT_MIN, LAT_MAX, LON_MIN, LON_MAX, GRID_SIZE)
                 ds_e_on_c, _ = era5_to_cerra(ds_e, ds_c_sub)
                 
@@ -127,44 +121,19 @@ if __name__ == "__main__":
                 plot_all(ds_e_on_c, ds_c_sub, idx, title_suffix=plot_title, save_path=save_full_path)
 
                 # ====================================================
-                # D. INCREMENTAL ZARR SAVING
+                # D. INCREMENTAL ZARR SAVING (Refactored)
                 # ====================================================
-                def rename_vars(ds, suffix):
-                    return ds.rename({v: f"{v}_{suffix}" for v in ds.data_vars})
-
-                ds_save_list = []
-
-                # Always add Mean and Std
-                ds_save_list.append(rename_vars(cerra_mean, "cerra_mean"))
-                ds_save_list.append(rename_vars(cerra_std, "cerra_std"))
-                ds_save_list.append(rename_vars(era5_mean, "era5_mean"))
-                ds_save_list.append(rename_vars(era5_std, "era5_std"))
-
-                # Conditionally add Full Members
-                if SAVE_CERRA_MEMBERS:
-                    ds_save_list.append(rename_vars(ds_c_sub, "cerra_members"))
-                
-                if SAVE_ERA5_MEMBERS:
-                    ds_save_list.append(rename_vars(ds_e_on_c, "era5_members"))
-
-
-                # Merge
-                ds_to_save = xr.merge(ds_save_list, compat='no_conflicts')
-
-                ## Sort
-                # 
-                ds_to_save = ds_to_save.sortby('valid_time')
-                
-                # --- FIX: Chunk on 'y' and 'x' dimensions ---
-                ds_to_save = ds_to_save.chunk({'valid_time': 1, 'y': -1, 'x': -1})
-
-                # Write to Zarr
-                if not os.path.exists(ZARR_PATH):
-                    print(f"Initializing Zarr store at {ZARR_PATH}")
-                    ds_to_save.to_zarr(ZARR_PATH, mode='w', zarr_format=2)
-                else:
-                    print(f"Appending to Zarr store at {ZARR_PATH}")
-                    ds_to_save.to_zarr(ZARR_PATH, mode='a', append_dim='valid_time', zarr_format=2)
+                save_to_zarr(
+                    zarr_path=ZARR_PATH,
+                    cerra_mean=cerra_mean,
+                    cerra_std=cerra_std,
+                    era5_mean=era5_mean,
+                    era5_std=era5_std,
+                    ds_cerra=ds_c_sub,
+                    ds_era5=ds_e_on_c,
+                    save_cerra_members=SAVE_CERRA_MEMBERS,
+                    save_era5_members=SAVE_ERA5_MEMBERS
+                )
                 
                 ds_c.close()
                 ds_e.close()
