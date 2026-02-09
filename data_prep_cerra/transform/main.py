@@ -16,8 +16,8 @@ if __name__ == "__main__":
     OUTPUT_DIR = '../output_plots'
     ZARR_PATH = '../output_data.zarr'
 
-    SAVE_ERA5_MEMBERS = True   
-    SAVE_CERRA_MEMBERS = True 
+    SAVE_ERA5_MEMBERS = False   
+    SAVE_CERRA_MEMBERS = False 
 
     if not os.path.exists(OUTPUT_DIR):
         os.makedirs(OUTPUT_DIR)
