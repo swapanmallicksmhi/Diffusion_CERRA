@@ -33,6 +33,77 @@ def find_matching_files(cerra_dir, era5_dir, years, months, cycles):
 
     return matched_pairs
 
+def calculate_summary_stats(zarr_path):
+    """
+    Calculates global min, max, mean, and std for all variables in the dataset.
+    
+    Args:
+        file_path : Path to input dataset (Zarr).
+        
+    Returns:
+        xr.Dataset: The original dataset merged with a new section where:
+            - Dimension 'variable' contains the names of original variables.
+            - Data variables are 'min', 'max', 'mean', 'std'.
+    """
+    stats = {
+        'min': [],
+        'max': [],
+        'mean': [],
+        'std': []
+    }
+    
+    # Open dataset (assuming Zarr engine based on context)
+    ds = xr.open_dataset(zarr_path, engine='zarr', chunks={})
+
+    # List to store the variable names as we process them
+    processed_var_names = []
+
+    # Iterate over the actual data variables in the dataset
+    for var in ds.data_vars:
+        # Check if the variable is numeric before calculating stats
+        if np.issubdtype(ds[var].dtype, np.number):
+            d_var = ds[var]
+            
+            # Compute stats (float() ensures computation if lazy/dask)
+            stats['min'].append(float(d_var.min()))
+            stats['max'].append(float(d_var.max()))
+            stats['mean'].append(float(d_var.mean()))
+            stats['std'].append(float(d_var.std()))
+            
+            processed_var_names.append(var)
+
+    # Construct the summary Dataset
+    stats_ds = xr.Dataset(
+        data_vars={
+            stat_name: (('variable',), values) 
+            for stat_name, values in stats.items()
+        },
+        coords={
+            'variable': processed_var_names
+        }
+    )
+
+    # Merge original data with statistics
+    ds_to_save = xr.merge([ds, stats_ds], compat='no_conflicts')
+
+    # Sort by time if the dimension exists
+    if 'valid_time' in ds_to_save.dims:
+        ds_to_save = ds_to_save.sortby('valid_time')
+    
+    # Chunk data for optimized saving
+    # Using .get() for chunk sizes allows this to run even if dims are missing
+    chunks = {}
+    if 'valid_time' in ds_to_save.dims:
+        chunks['valid_time'] = 1
+    if 'y' in ds_to_save.dims:
+        chunks['y'] = -1
+    if 'x' in ds_to_save.dims:
+        chunks['x'] = -1
+        
+    ds_to_save = ds_to_save.chunk(chunks)
+
+    ds_to_save.to_zarr(zarr_path, mode='w', zarr_format=2)
+
 def save_to_zarr(zarr_path, cerra_mean, cerra_std, era5_mean, era5_std, 
                  ds_cerra=None, ds_era5=None, 
                  save_cerra_members=False, save_era5_members=False):
@@ -80,14 +151,10 @@ def save_to_zarr(zarr_path, cerra_mean, cerra_std, era5_mean, era5_std,
         # append_dim must match the dimension you are extending
         ds_to_save.to_zarr(zarr_path, mode='a', append_dim='valid_time', zarr_format=2)
 
-        
+
 # ==========================================
 # 2. PROCESSING FUNCTIONS
 # ==========================================
-def open_ds(file_path):
-    ds = xr.open_dataset(file_path)
-    ds['longitude'] = ((ds.longitude + 180) % 360) - 180
-    return ds
 
 def crop_cerra(ds, lat_min, lat_max, lon_min, lon_max, grid_size=128):
     mask = (

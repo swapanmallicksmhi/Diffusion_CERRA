@@ -2,7 +2,7 @@ import os
 import random
 import xarray as xr
 from helpers import find_matching_files, crop_cerra, era5_to_cerra
-from helpers import plot_all, plot_statistics, save_to_zarr  # Imported new function
+from helpers import plot_all, plot_statistics, save_to_zarr, calculate_summary_stats
 import argparse
 
 
@@ -140,3 +140,5 @@ if __name__ == "__main__":
                 
             except Exception as e:
                 print(f"Error processing {os.path.basename(cerra_path)}: {e}")
+
+        calculate_summary_stats(ZARR_PATH)
