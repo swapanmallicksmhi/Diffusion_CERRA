@@ -1,4 +1,5 @@
-from cerra_era5_dm import CerraEra5rDataModule
+from .datamodule.cerra_era5_dm import CerraEra5rDataModule
+
 
 # Initialize the DataModule
 dm = CerraEra5rDataModule(

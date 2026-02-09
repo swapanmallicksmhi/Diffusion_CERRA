@@ -8,17 +8,44 @@ import cartopy.crs as ccrs
 import cartopy.feature as cfeature
 from helpers import find_matching_files, open_ds, crop_cerra, era5_to_cerra
 from helpers import plot_all, plot_statistics
+import argparse
+
+
+def parse_args():
+    parser = argparse.ArgumentParser(description="Run CERRA/ERA5 processing")
+
+    parser.add_argument("--cerra-dir", type=str, required=True,
+                        help="Path to CERRA data directory")
+    parser.add_argument("--era5-dir", type=str, required=True,
+                        help="Path to ERA5-EDA data directory")
+    parser.add_argument("--output-dir", type=str, default="../output_plots",
+                        help="Output directory for plots")
+    parser.add_argument("--zarr-path", type=str, default="../output_data.zarr",
+                        help="Output Zarr store")
+
+    parser.add_argument("--cerra-members", type=bool, default=False,
+                        help="Incluude Cerra members")
+    
+    parser.add_argument("--era5-members", type=bool, default=False,
+                        help="Include Era5 members")
+
+    return parser.parse_args()
+
+
+ 
+
 
 if __name__ == "__main__":
     # --- Configuration ---
-    CERRA_DIR = '/lus/h2resw01/scratch/swe4281/CERRA_DATA2026/CERRA_DATA/'
-    ERA5_DIR  = '/lus/h2resw01/scratch/swe4281/CERRA_DATA2026/ERA5EDA_DATA/'
-    OUTPUT_DIR = '../output_plots'
-    ZARR_PATH = '../output_data.zarr'
-
-    SAVE_ERA5_MEMBERS = False   
-    SAVE_CERRA_MEMBERS = False 
-
+    args = parse_args()
+ 
+    # --- Configuration ---
+    CERRA_DIR = args.cerra_dir
+    ERA5_DIR  = args.era5_dir
+    OUTPUT_DIR = args.output_dir
+    ZARR_PATH  = args.zarr_path
+    SAVE_CERRA_MEMBERS = args.era5_members 
+    SAVE_ERA5_MEMBERS = args.cerra_members
     if not os.path.exists(OUTPUT_DIR):
         os.makedirs(OUTPUT_DIR)
     

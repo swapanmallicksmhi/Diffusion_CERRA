@@ -9,8 +9,16 @@
   - fetch_cerra_t2m_nc_ens.py   /lus/h2resw01/scratch/swe4281/CERRA_DATA2026/ERA5EDA_DATA
 
 
-
-
+## Create zarr dataset
+```bash
+cd transform
+conda activate mamba-env
+python3 main.py \
+    --cerra-dir "/lus/h2resw01/scratch/swe4281/CERRA_DATA2026/CERRA_DATA/" \
+    --era5-dir  "/lus/h2resw01/scratch/swe4281/CERRA_DATA2026/ERA5EDA_DATA/" \
+    --zarr-path "/ec/res4/scratch/smcd/output/yarong_data/cera_era5_128x128"
+```
+  
 
 
 ## Ernvironment
@@ -46,5 +54,6 @@ mamba install -y -c conda-forge \
     cfgrib \
     eccodes \
     dask \
-    zarr
+    zarr \
+    pytorch-lightning
 ```

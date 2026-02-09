@@ -20,7 +20,7 @@ def find_matching_files(cerra_dir, era5_dir, years, months, cycles):
                 yyyy = str(year)
                 # Construct filenames
                 cerra_filename = f"cerra_t2m_{yyyy}{mm}_{cycle}.nc"
-                era5_filename = f"erra5eda_t2m_{yyyy}{mm}_{cycle}.nc" # Note: 'erra5eda' typo handled
+                era5_filename = f"era5eda_t2m_{yyyy}{mm}_{cycle}.nc" # Note: 'erra5eda' typo handled
 
                 cerra_path = os.path.join(cerra_dir, cerra_filename)
                 era5_path = os.path.join(era5_dir, era5_filename)
