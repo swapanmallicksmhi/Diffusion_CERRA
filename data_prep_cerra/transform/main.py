@@ -43,13 +43,13 @@ if __name__ == "__main__":
     if not os.path.exists(OUTPUT_DIR):
         os.makedirs(OUTPUT_DIR)
     
-    YEARS = ["2024"]
-    MONTHS = ["10"]
-    CYCLES = ['0000', '0600', '1200', '1800'] 
+    YEARS = [ str(i) for i in range(2015,2021)]
+    MONTHS = [f"{i:02d}" for i in range(1, 13)]
+    CYCLES = ['0000'] 
     
     LAT_MIN, LAT_MAX = 50, 73
     LON_MIN, LON_MAX = 1, 30
-    GRID_SIZE = 128
+    GRID_SIZE = 156
 
     pairs = find_matching_files(CERRA_DIR, ERA5_DIR, YEARS, MONTHS, CYCLES)
 
