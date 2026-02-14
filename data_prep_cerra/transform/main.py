@@ -8,7 +8,8 @@ import argparse
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Run CERRA/ERA5 processing")
-
+    parser.add_argument("--grid-size", type=int, required=True,
+                        help="Size of the gris, 128 or 256")
     parser.add_argument("--cerra-dir", type=str, required=True,
                         help="Path to CERRA data directory")
     parser.add_argument("--era5-dir", type=str, required=True,
@@ -30,7 +31,7 @@ def parse_args():
 if __name__ == "__main__":
     # --- Configuration ---
     args = parse_args()
- 
+    GRID_SIZE = args.grid_size
     CERRA_DIR = args.cerra_dir
     ERA5_DIR  = args.era5_dir
     OUTPUT_DIR = args.output_dir
@@ -42,14 +43,17 @@ if __name__ == "__main__":
 
     if not os.path.exists(OUTPUT_DIR):
         os.makedirs(OUTPUT_DIR)
-    
-    YEARS = ["2024"]
-    MONTHS = ["10"]
-    CYCLES = ['0000', '0600', '1200', '1800'] 
+        
+    YEARS = [ str(i) for i in range(2015,2025)]
+    MONTHS = [f"{i:02d}" for i in range(1, 13)]
+    CYCLES = ['0000'] 
+
+    #YEARS = ["2024"]
+    #MONTHS = ["10"]
+    #CYCLES = ['0000', '0600', '1200', '1800'] 
     
     LAT_MIN, LAT_MAX = 50, 73
     LON_MIN, LON_MAX = 1, 30
-    GRID_SIZE = 128
 
     pairs = find_matching_files(CERRA_DIR, ERA5_DIR, YEARS, MONTHS, CYCLES)
 
