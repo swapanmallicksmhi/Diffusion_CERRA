@@ -29,7 +29,7 @@ python3 main.py \
     --grid-size 256 \
     --cerra-dir "/lus/h2resw01/scratch/swe4281/CERRA_DATA2026/CERRA_DATA/" \
     --era5-dir  "/lus/h2resw01/scratch/swe4281/CERRA_DATA2026/ERA5EDA_DATA/" \
-    --zarr-path "/ec/res4/scratch/smcd/output/yarong_data/cera_era5_256x256"
+    --zarr-path "/ec/res4/scratch/smcd/output/yarong_data/cera_era5_256x256.zarr"
 ```
   
 
