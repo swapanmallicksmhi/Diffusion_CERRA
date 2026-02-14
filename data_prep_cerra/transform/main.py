@@ -45,7 +45,7 @@ if __name__ == "__main__":
     if not os.path.exists(OUTPUT_DIR):
         os.makedirs(OUTPUT_DIR)
     
-    YEARS = [ str(i) for i in range(2015,2021)]
+    YEARS = [ str(i) for i in range(2015,2025)]
     MONTHS = [f"{i:02d}" for i in range(1, 13)]
     CYCLES = ['0000'] 
     
