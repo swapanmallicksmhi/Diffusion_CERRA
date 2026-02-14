@@ -1,6 +1,18 @@
 # Data prep for CERRA
 
+import xarray as xr
 
+# Open the Zarr store
+#ds = xr.open_zarr('/ec/res4/scratch/smcd/output/yarong_data/cera_era5_128x128', consolidated=True)
+ds = xr.open_zarr('/lus/h2resw01/scratch/swe4281/CERRA_DATA2026/zarr-out_2015-2024', consolidated=True)
+ds = xr.open_zarr('/ec/res4/scratch/smcd/output/yarong_data/cera_era5_256x256', consolidated=True, zarr_format=2)
+
+
+print(ds)
+print("\nVariables:", list(ds.data_vars))
+#print("Time steps:", ds.valid_time.values)
+print(ds["mean"])
+temp_ds = ds['t2m_cerra_mean'].isel(valid_time=0)
 
 ## Files needed in stage 1 of the project 
 - era5-eda ensemble on 
@@ -14,9 +26,10 @@
 cd transform
 conda activate mamba-env
 python3 main.py \
+    --grid-size 256 \
     --cerra-dir "/lus/h2resw01/scratch/swe4281/CERRA_DATA2026/CERRA_DATA/" \
     --era5-dir  "/lus/h2resw01/scratch/swe4281/CERRA_DATA2026/ERA5EDA_DATA/" \
-    --zarr-path "/ec/res4/scratch/smcd/output/yarong_data/cera_era5_128x128"
+    --zarr-path "/ec/res4/scratch/smcd/output/yarong_data/cera_era5_256x256"
 ```
   
 

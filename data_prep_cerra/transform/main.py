@@ -49,10 +49,8 @@ if __name__ == "__main__":
     MONTHS = [f"{i:02d}" for i in range(1, 13)]
     CYCLES = ['0000'] 
     
-    YEARS = ["2024"]
-    MONTHS = ["10"]
-    CYCLES = ['0000'] 
-    
+   
+
 
     LAT_MIN, LAT_MAX = 50, 73
     LON_MIN, LON_MAX = 1, 30

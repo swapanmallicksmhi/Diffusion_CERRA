@@ -92,27 +92,8 @@ def calculate_summary_stats(zarr_path):
             'variable': processed_var_names
         }
     )
-
-    # Merge original data with statistics
-    ds_to_save = xr.merge([ds, stats_ds], compat='no_conflicts')
-
-    # Sort by time if the dimension exists
-    if 'valid_time' in ds_to_save.dims:
-        ds_to_save = ds_to_save.sortby('valid_time')
-    
-    # Chunk data for optimized saving
-    # Using .get() for chunk sizes allows this to run even if dims are missing
-    chunks = {}
-    if 'valid_time' in ds_to_save.dims:
-        chunks['valid_time'] = 1
-    if 'y' in ds_to_save.dims:
-        chunks['y'] = -1
-    if 'x' in ds_to_save.dims:
-        chunks['x'] = -1
-        
-    ds_to_save = ds_to_save.chunk(chunks)
-
-    ds_to_save.to_zarr(zarr_path, mode='w', zarr_format=2)
+    stats_ds.to_zarr(zarr_path, mode='a', zarr_format=2)
+ 
 
 def check_for_nans(obj):
     """
