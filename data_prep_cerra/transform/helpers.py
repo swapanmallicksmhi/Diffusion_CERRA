@@ -55,6 +55,16 @@ def calculate_summary_stats(zarr_path):
     # Open dataset (assuming Zarr engine based on context)
     ds = xr.open_dataset(zarr_path, engine='zarr', chunks={})
 
+ 
+    if  check_for_nans(ds):
+        print("ERROR [calculate_summary_stats]: NaN values detected in the dataset to be saved. Please investigate.")
+        exit(1)
+
+
+    if  check_for_nans(ds.longitude) or check_for_nans(ds.latitude):
+        print("ERROR [calculate_summary_stats]: NaN values detected in coordinates. Cannot save dataset with invalid coordinates.")
+        exit(1)
+
     # List to store the variable names as we process them
     processed_var_names = []
 
@@ -104,6 +114,33 @@ def calculate_summary_stats(zarr_path):
 
     ds_to_save.to_zarr(zarr_path, mode='w', zarr_format=2)
 
+def check_for_nans(obj):
+    """
+    Checks if an Xarray Dataset or DataArray contains any NaN values.
+    Returns a dictionary with results per variable if it's a Dataset.
+    """
+    results = None
+    if isinstance(obj, xr.DataArray):
+        nan_count = obj.isnull().sum().compute().item()
+        has_nans = nan_count > 0
+        print(f"Variable '{obj.name}': {nan_count} NaNs found. (Has NaNs: {has_nans})")
+        if has_nans:
+            return {obj.name: True}
+        results
+    
+    elif isinstance(obj, xr.Dataset):
+        results = {}
+        print("Checking Dataset variables for NaNs...")
+        for var in obj.data_vars:
+            nan_count = obj[var].isnull().sum().compute().item()
+            if results is None:
+                results = {}
+            if   nan_count > 0:
+                results[var] = True
+            print(f" - {var}: {nan_count} NaNs")
+        return results
+
+
 def save_to_zarr(zarr_path, cerra_mean, cerra_std, era5_mean, era5_std, 
                  ds_cerra=None, ds_era5=None, 
                  save_cerra_members=False, save_era5_members=False):
@@ -114,7 +151,8 @@ def save_to_zarr(zarr_path, cerra_mean, cerra_std, era5_mean, era5_std,
     def rename_vars(ds, suffix):
         """Internal helper to rename variables with a suffix to avoid collisions."""
         return ds.rename({v: f"{v}_{suffix}" for v in ds.data_vars})
-
+    
+    
     ds_save_list = []
 
     # 1. Always add Mean and Std
@@ -134,7 +172,14 @@ def save_to_zarr(zarr_path, cerra_mean, cerra_std, era5_mean, era5_std,
     # compat='no_conflicts' preserves metadata and allows merging 
     # even if some coords are slightly different (within tolerance)
     ds_to_save = xr.merge(ds_save_list, compat='no_conflicts')
+    if  check_for_nans(ds_to_save):
+        print("ERROR: NaN values detected in the dataset to be saved. Please investigate.")
+        exit(1)
 
+
+    if  check_for_nans(ds_to_save.longitude) or check_for_nans(ds_to_save.latitude):
+        print("ERROR: NaN values detected in coordinates. Cannot save dataset with invalid coordinates.")
+        exit(1)
     # 4. Sort
     ds_to_save = ds_to_save.sortby('valid_time')
     
