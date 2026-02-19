@@ -20,11 +20,9 @@ export OMPI_MCA_pml=ucx
 export UCX_MEMTYPE_CACHE=n
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 
-VAR="t2m"
-TYPE="FC_DDPM"
-INPUT="/ec/res4/hpcperm/swe4281/DDPM_CARRA2_FINAL/INPUT_PNG/${VAR}"
-OUTPUT="/ec/res4/scratch/swe4281/SEP_FINAL_DDPM/${VAR}/${TYPE}"
-#OUTPUT="/ec/res4/hpcperm/swe4281/DDPM_CARRA2_FINAL/DDPM_MODEL_OCT/${VAR}/${TYPE}"
+TYPE="DDPM"
+INPUT="/ec/res4/scratch/swe4281/CERRA_DATA2026/DDMP_MODEL/TEST_INPUT"
+OUTPUT="/ec/res4/scratch/swe4281/CERRA_DATA2026/DDMP_MODEL/${TYPE}"
 
 # Lowered batch + microbatch + enable fp16
 MODEL_FLAGS="--image_size 256 --num_channels 64"   # reduce model size if needed
