@@ -118,9 +118,9 @@ def create_model(
         attention_ds.append(image_size // int(res))
 
     return UNetModel(
-        in_channels=3,
+        in_channels=1,
         model_channels=num_channels,
-        out_channels=(3 if not learn_sigma else 6),
+        out_channels=(1 if not learn_sigma else 6),
         num_res_blocks=num_res_blocks,
         attention_resolutions=tuple(attention_ds),
         dropout=dropout,
@@ -133,7 +133,7 @@ def create_model(
         num_heads=num_heads,
         num_heads_upsample=num_heads_upsample,
         use_scale_shift_norm=use_scale_shift_norm,
-        cond_channels=3,          # enable conditioning support (ERA5 maps)
+        cond_channels=1,          # enable conditioning support (ERA5 maps)
         cond_attn_heads=4,        # number of cross-attention heads
     )
     #    channel_mult=channel_mult,
@@ -232,9 +232,9 @@ def sr_create_model(
         attention_ds.append(large_size // int(res))
 
     return SuperResModel(
-        in_channels=3,
+        in_channels=1,
         model_channels=num_channels,
-        out_channels=(3 if not learn_sigma else 6),
+        out_channels=(1 if not learn_sigma else 6),
         num_res_blocks=num_res_blocks,
         attention_resolutions=tuple(attention_ds),
         dropout=dropout,

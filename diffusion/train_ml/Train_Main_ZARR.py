@@ -76,7 +76,8 @@ import os
 import importlib
 
 from src_diffusion.diffusion_dist import create_model_and_diffusion, model_and_diffusion_defaults
-from src_diffusion.image_datasets import load_data
+from src_diffusion.zarr_load import load_data
+#from src_diffusion.image_datasets import load_data
 from src_diffusion.diffusion_train import TrainLoop
 from src_diffusion import logger
 from src_diffusion.resample import create_named_schedule_sampler # SWAPAN new line for sampler
@@ -185,12 +186,13 @@ def main():
 
     # Prepare dataset / loader
     logger.log("Loading dataset...")
-    # load_data signature expected: data_dir, batch_size, image_size (older/new versions may accept other kwargs)
+    # load_data signature expected: data_dir, batch_size
     try:
-        data = load_data(data_dir=args.data_dir, batch_size=int(args.batch_size), image_size=int(args.image_size))
-    except TypeError:
-        # fallback: try positional call (older API)
-        data = load_data(args.data_dir, int(args.batch_size), int(args.image_size))
+        loader = load_data(zarr_path=args.data_dir, batch_size=int(args.batch_size))
+        #data = load_data(data_dir=args.data_dir, batch_size=int(args.batch_size), image_size=int(args.image_size))
+    #except TypeError:
+    #    # fallback: try positional call (older API)
+    #    loader = load_data(args.data_dir, int(args.batch_size), int(args.image_size))
     except Exception as e:
         print("ERROR while calling load_data():", e)
         raise
@@ -200,13 +202,14 @@ def main():
     TrainLoop(
         model=model,
         diffusion=diffusion,
-        data=data,
+        data=loader,
         batch_size=args.batch_size,
         microbatch=int(args.microbatch),
         lr=float(args.lr),
         steps=int(args.steps),
         device=device,
         outdir=args.TRAIN_OUT,
+        save_interval=args.save_interval,
         ema_rate=args.ema_rate,
         log_interval=args.log_interval,
         use_fp16=args.use_fp16,
