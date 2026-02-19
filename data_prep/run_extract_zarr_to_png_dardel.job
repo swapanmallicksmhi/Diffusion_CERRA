@@ -1,0 +1,67 @@
+#!/bin/bash -l
+#-------------------------------------------------
+#SBATCH -A naiss2025-1-5
+#SBATCH -p shared
+#SBATCH --job-name=zarr_plots
+#SBATCH --output=zarr_plots.out
+#SBATCH --error=zarr_plots.out
+#SBATCH -n 1
+#SBATCH --mem=60G
+#SBATCH --time=36:00:00
+#-------------------------------------------------
+
+#set -euo pipefail
+set -x
+
+# =================================================
+# USER-DEFINED VARIABLES (DEFINE FIRST)
+# =================================================
+
+# Input / Output
+#zarrinput="${PWD}/zarr-out"
+#outputdir="${PWD}/PLOTS"
+zarrinput="/cfs/klemming/scratch/y/yarongc/FINAL_zarr-out_2015-2024"
+outputdir="/cfs/klemming/scratch/y/yarongc/ZARR_PLOTS_NEW"
+# =================================================
+# PREPARE OUTPUT DIRECTORY
+# =================================================
+rm -rf "${outputdir}"
+mkdir -p "${outputdir}"
+
+# Geographic domain
+latmin=54.0
+#latmin=49.8
+latmax=71.0
+lonmin=4.0
+#lonmin=-1.1
+lonmax=30.0
+
+# Variables to plot (DEFINE AS LIST FIRST)
+variables=(
+    t2m_cerra_mean
+    t2m_era5_mean
+    t2m_cerra_std
+    t2m_era5_std
+)
+
+# =================================================
+# LOAD ENVIRONMENT
+# =================================================
+ml PDC
+ml miniconda3/25.3.1-1-cpeGNU-24.11
+source activate mamba-env
+
+# =================================================
+# RUN PYTHON SCRIPT
+# =================================================
+srun -n 1 /cfs/klemming/home/y/yarongc/.conda/envs/mamba-env/bin/python extract_zarr_to_png.py\
+    --zarr-path "${zarrinput}" \
+    --output-dir "${outputdir}" \
+    --variables "${variables[@]}" \
+    --lat-min "${latmin}" \
+    --lat-max "${latmax}" \
+    --lon-min "${lonmin}" \
+    --lon-max "${lonmax}"\
+    --full-bleed 
+
+echo "Job completed successfully."
