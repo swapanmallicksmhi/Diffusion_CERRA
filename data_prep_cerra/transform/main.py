@@ -40,6 +40,7 @@ if __name__ == "__main__":
     # Correction: Assigned args.cerra_members to CERRA and args.era5 to ERA5
     SAVE_CERRA_MEMBERS = args.cerra_members 
     SAVE_ERA5_MEMBERS = args.era5_members
+     
 
     if not os.path.exists(OUTPUT_DIR):
         os.makedirs(OUTPUT_DIR)
@@ -52,8 +53,16 @@ if __name__ == "__main__":
     #MONTHS = ["10"]
     #CYCLES = ['0000', '0600', '1200', '1800'] 
     
+    YEARS = [ str(i) for i in range(2015,2025)]
+    MONTHS = [f"{i:02d}" for i in range(1, 13)]
+    CYCLES = ['0000'] 
+    
+   
+
+
     LAT_MIN, LAT_MAX = 50, 73
     LON_MIN, LON_MAX = 1, 30
+    
 
     pairs = find_matching_files(CERRA_DIR, ERA5_DIR, YEARS, MONTHS, CYCLES)
 
@@ -141,6 +150,7 @@ if __name__ == "__main__":
                 
                 ds_c.close()
                 ds_e.close()
+
                 
             except Exception as e:
                 print(f"Error processing {os.path.basename(cerra_path)}: {e}")
