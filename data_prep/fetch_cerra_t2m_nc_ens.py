@@ -3,7 +3,7 @@ import calendar
 from pathlib import Path
 
 dataset = "reanalysis-cerra-single-levels"
-year = "2020"
+year = "2023"
 
 output_dir = Path("/lus/h2resw01/scratch/swe4281/CERRA_DATA2026/CERRA_DATA")
 output_dir.mkdir(parents=True, exist_ok=True)

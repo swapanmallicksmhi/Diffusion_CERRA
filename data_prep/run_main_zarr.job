@@ -1,0 +1,29 @@
+#!/bin/sh
+#-------------------------------
+#SBATCH --job-name=zarr_dataprocess
+#SBATCH --output=ceraera.out
+#SBATCH --error=ceraera.out
+#SBATCH --nodes=1
+#SBATCH --mem=60GB
+#SBATCH --time=36:00:00
+#-------------------------------
+set -evx
+module load conda
+conda activate mamba-env
+#
+cerradir="/lus/h2resw01/scratch/swe4281/CERRA_DATA2026/CERRA_DATA/"
+era5dir="/lus/h2resw01/scratch/swe4281/CERRA_DATA2026/ERA5EDA_DATA/"
+outputdir="/ec/res4/scratch/swe4281/CERRA_DATA2026/FINAL_process-out_2015-2024"
+zarrpath="/ec/res4/scratch/swe4281/CERRA_DATA2026/FINAL_zarr-out_2015-2024"
+mkdir -p ${outputdir}
+rm -rf ${zarrpath}
+
+python3 main_zarr.py \
+    --grid-size 256 \
+    --cerra-dir  ${cerradir}\
+    --era5-dir  ${era5dir} \
+    --output-dir  ${outputdir} \
+    --zarr-path  ${zarrpath} \
+    --cerra-members "0" \
+    --era5-members "0"
+#
