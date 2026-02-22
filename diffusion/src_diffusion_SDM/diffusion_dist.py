@@ -4,6 +4,9 @@ Date : 10 March 2025
 
 Key concept:
 ------------
+To make this a score-based diffusion model (SDE-based)
+Modification create_diffusion_gaussian with score-based diffusion
+
 """
 
 import argparse
@@ -14,8 +17,7 @@ from .respace import SpacedDiffusion, space_timesteps
 from .unet import SuperResModel, UNetModel
 
 NUM_CLASSES = 1000
-
-
+#
 def model_and_diffusion_defaults():
     """
     Defaults for image training.
@@ -40,9 +42,11 @@ def model_and_diffusion_defaults():
         rescale_learned_sigmas=True,
         use_checkpoint=False,
         use_scale_shift_norm=True,
+        # New args
+        diffusion_type="ddpm",        # switch between "ddpm", "vp", "ve"
+        loss_type="score_matching",   # used for score-based SDEs
     )
-
-
+#
 def create_model_and_diffusion(
     image_size,
     class_cond,
@@ -63,6 +67,8 @@ def create_model_and_diffusion(
     rescale_learned_sigmas,
     use_checkpoint,
     use_scale_shift_norm,
+    diffusion_type="ddpm",     # NEW
+    loss_type="score_matching" # NEW
 ):
     model = create_model(
         image_size,
@@ -77,7 +83,7 @@ def create_model_and_diffusion(
         use_scale_shift_norm=use_scale_shift_norm,
         dropout=dropout,
     )
-    diffusion = create_diffusion_gaussian(
+    diffusion = create_diffusion(
         steps=diffusion_steps,
         learn_sigma=learn_sigma,
         sigma_small=sigma_small,
@@ -87,6 +93,8 @@ def create_model_and_diffusion(
         rescale_timesteps=rescale_timesteps,
         rescale_learned_sigmas=rescale_learned_sigmas,
         timestep_respacing=timestep_respacing,
+        diffusion_type=diffusion_type,
+        loss_type=loss_type,
     )
     return model, diffusion
 
@@ -245,8 +253,83 @@ def sr_create_model(
         num_heads_upsample=num_heads_upsample,
         use_scale_shift_norm=use_scale_shift_norm,
     )
+#------------------SWAPAN ALL DDPM, SDM are now added------
+def create_diffusion(
+    *,
+    steps=4000,
+    noise_schedule="linear",
+    use_kl=False,
+    predict_xstart=False,
+    rescale_timesteps=False,
+    rescale_learned_sigmas=False,
+    timestep_respacing="",
+    learn_sigma=False,
+    sigma_small=False,
+    # New args for score-based
+    diffusion_type="vp",   # "ddpm", "vp", or "ve"
+    loss_type="score_matching"
+):
+    """
+    Create either a DDPM diffusion or a score-based SDE depending on diffusion_type.
+    """
+    betas = gd.get_named_beta_schedule(noise_schedule, steps)
 
+    if not timestep_respacing:
+        timestep_respacing = [steps]
 
+    if diffusion_type == "ddpm":
+        print('SWAPAN DIFFUSION Standard Gaussian diffusion (Ho et al.) DDPM')
+        # Standard Gaussian diffusion (Ho et al.)
+        if use_kl:
+            loss_type_enum = gd.LossType.RESCALED_KL
+        elif rescale_learned_sigmas:
+            loss_type_enum = gd.LossType.RESCALED_MSE
+        else:
+            loss_type_enum = gd.LossType.MSE
+
+        return SpacedDiffusion(
+            use_timesteps=space_timesteps(steps, timestep_respacing),
+            betas=betas,
+            model_mean_type=(
+                gd.ModelMeanType.EPSILON if not predict_xstart else gd.ModelMeanType.START_X
+            ),
+            model_var_type=(
+                (
+                    gd.ModelVarType.FIXED_LARGE
+                    if not sigma_small
+                    else gd.ModelVarType.FIXED_SMALL
+                )
+                if not learn_sigma
+                else gd.ModelVarType.LEARNED_RANGE
+            ),
+            loss_type=loss_type_enum,
+            rescale_timesteps=rescale_timesteps,
+        )
+
+    elif diffusion_type == "vp":
+        print('SWAPAN DIFFUSION IS now Variance-preserving SDE (Song et al.)')
+        # Variance-preserving SDE (Song et al.)
+        from .score_sde import VPSDE
+        return VPSDE(
+            N=steps,
+            betas=betas,
+            loss_type=loss_type,
+        )
+
+    elif diffusion_type == "ve":
+        print('SWAPAN DIFFUSION Variance-exploding SDE (Song et al.)')
+        # Variance-exploding SDE (Song et al.)
+        from .score_sde import VESDE
+        return VESDE(
+            N=steps,
+            sigma_min=0.01,
+            sigma_max=50,
+            loss_type=loss_type,
+        )
+
+    else:
+        raise ValueError(f"Unknown diffusion_type: {diffusion_type}")
+#----------------------------------------------------------------------------------
 def create_diffusion_gaussian(
     *,
     steps=4000,

@@ -5,8 +5,16 @@ Date : 10 March 2025
 
 Key concept:
 ------------
+V1:Date 30 Sep, 2025, Added `crps_gaussian
 
-
+Main changes:
+- Added `crps_gaussian` computation for a normal predictive distribution.
+- In `training_losses`, replace the MSE term with CRPS computed between the
+  predicted x_start distribution (mean + variance) and the true x_start.
+- If the model predicts a variance (learned variance variants), convert it
+  into the implied variance for x_start depending on model_mean_type.
+- If the model does not output variance, use the posterior variance as a
+  reasonable proxy (keeps behavior stable for FIXED_* settings).
 """
 
 import enum
@@ -659,18 +667,61 @@ class GaussianDiffusion:
         output = th.where((t == 0), decoder_nll, kl)
         return {"output": output, "pred_xstart": out["pred_xstart"]}
 
+    # --- CRPS helper -------------------------------------------------------
+    @staticmethod
+    def _crps_gaussian(mu, sigma, y, eps=1e-12):
+        """
+        Vectorized CRPS for a Gaussian predictive distribution.
+
+        CRPS for N(mu, sigma^2) and observation y is:
+            crps = sigma * ( z*(2*Phi(z)-1) + 2*phi(z) - 1/sqrt(pi) )
+        where z = (y - mu) / sigma, phi=pdf, Phi=cdf of standard normal.
+
+        Arguments:
+            mu: torch tensor, predictive mean.
+            sigma: torch tensor, predictive std (must be >= 0).
+            y: torch tensor, observation.
+            eps: minimum sigma to avoid division by zero.
+
+        Returns:
+            crps: tensor same shape as mu/y with CRPS per element.
+        """
+        # ensure positive std
+        sigma_safe = th.clamp(sigma, min=eps)
+        z = (y - mu) / sigma_safe
+
+        # standard normal pdf and cdf
+        # pdf = exp(-0.5*z^2) / sqrt(2*pi)
+        pdf = th.exp(-0.5 * z * z) / math.sqrt(2.0 * math.pi)
+        # cdf via erf
+        cdf = 0.5 * (1.0 + th.erf(z / math.sqrt(2.0)))
+
+        # CRPS formula
+        crps = sigma_safe * (z * (2.0 * cdf - 1.0) + 2.0 * pdf - 1.0 / math.sqrt(math.pi))
+        return crps
+
+    # ----------------------------------------------------------------------
+
     def training_losses(self, model, x_start, t, model_kwargs=None, noise=None):
         """
         Compute training losses for a single timestep.
 
-        :param model: the model to evaluate loss on.
-        :param x_start: the [N x C x ...] tensor of inputs.
-        :param t: a batch of timestep indices.
-        :param model_kwargs: if not None, a dict of extra keyword arguments to
-            pass to the model. This can be used for conditioning.
-        :param noise: if specified, the specific Gaussian noise to try to remove.
-        :return: a dict with the key "loss" containing a tensor of shape [N].
-                 Some mean or variance settings may also have other keys.
+        Now uses CRPS (instead of raw MSE) as the primary error metric between
+        the predictive Gaussian for x_start and the true x_start.
+
+        Notes & assumptions:
+        - We construct a predictive Gaussian for x_start (mean + variance).
+          - The mean is obtained exactly as in the original code (pred_xstart).
+          - The variance for x_start is derived from the model's output variance
+            when available (LEARNED / LEARNED_RANGE), transformed according
+            to how the model's mean is parameterized:
+              * If model predicts EPSILON: var_x0 = (sqrt_recipm1_alphas_cumprod)^2 * var_eps
+              * If model predicts START_X: var_x0 = var_start (direct)
+              * If model predicts PREVIOUS_X: var_x0 = (1/coef1)^2 * var_xprev
+          - If the model does not provide a learned variance, we fall back to
+            `posterior_variance` as a proxy (consistent with the original code).
+        - VB terms are still computed (when model_var_type is learned) in the same
+          way as before and are added to the loss if applicable.
         """
         if model_kwargs is None:
             model_kwargs = {}
@@ -692,18 +743,35 @@ class GaussianDiffusion:
             if self.loss_type == LossType.RESCALED_KL:
                 terms["loss"] *= self.num_timesteps
         elif self.loss_type == LossType.MSE or self.loss_type == LossType.RESCALED_MSE:
+            # We still use the MSE branch selection (user requested CRPS replacement).
+            # Compute model output and any variance outputs.
             model_output = model(x_t, self._scale_timesteps(t), **model_kwargs)
+
+            # Prepare containers for model variance/log var (for the model's *output* variable)
+            B, C = x_t.shape[:2]
 
             if self.model_var_type in [
                 ModelVarType.LEARNED,
                 ModelVarType.LEARNED_RANGE,
             ]:
-                B, C = x_t.shape[:2]
                 assert model_output.shape == (B, C * 2, *x_t.shape[2:])
-                model_output, model_var_values = th.split(model_output, C, dim=1)
-                # Learn the variance using the variational bound, but don't let
-                # it affect our mean prediction.
-                frozen_out = th.cat([model_output.detach(), model_var_values], dim=1)
+                model_output_mean, model_var_values = th.split(model_output, C, dim=1)
+
+                # Convert model_var_values into a variance for the model output variable
+                if self.model_var_type == ModelVarType.LEARNED:
+                    model_log_variance_output = model_var_values
+                    model_variance_output = th.exp(model_log_variance_output)
+                else:
+                    min_log = _extract_into_tensor(
+                        self.posterior_log_variance_clipped, t, x_t.shape
+                    )
+                    max_log = _extract_into_tensor(np.log(self.betas), t, x_t.shape)
+                    frac = (model_var_values + 1.0) / 2.0
+                    model_log_variance_output = frac * max_log + (1.0 - frac) * min_log
+                    model_variance_output = th.exp(model_log_variance_output)
+
+                # For VB: we freeze the mean when computing VB terms exactly like original.
+                frozen_out = th.cat([model_output_mean.detach(), model_var_values], dim=1)
                 terms["vb"] = self._vb_terms_bpd(
                     model=lambda *args, r=frozen_out: r,
                     x_start=x_start,
@@ -712,23 +780,58 @@ class GaussianDiffusion:
                     clip_denoised=False,
                 )["output"]
                 if self.loss_type == LossType.RESCALED_MSE:
-                    # Divide by 1000 for equivalence with initial implementation.
-                    # Without a factor of 1/1000, the VB term hurts the MSE term.
                     terms["vb"] *= self.num_timesteps / 1000.0
 
-            target = {
-                ModelMeanType.PREVIOUS_X: self.q_posterior_mean_variance(
-                    x_start=x_start, x_t=x_t, t=t
-                )[0],
-                ModelMeanType.START_X: x_start,
-                ModelMeanType.EPSILON: noise,
-            }[self.model_mean_type]
-            assert model_output.shape == target.shape == x_start.shape
-            terms["mse"] = mean_flat((target - model_output) ** 2)
-            if "vb" in terms:
-                terms["loss"] = terms["mse"] + terms["vb"]
+                # Use the mean part as "model_output" going forward
+                model_output = model_output_mean
+
             else:
-                terms["loss"] = terms["mse"]
+                # No learned variance: use the fixed posterior variance as a proxy
+                model_variance_output = _extract_into_tensor(self.posterior_variance, t, x_t.shape)
+                model_log_variance_output = _extract_into_tensor(self.posterior_log_variance_clipped, t, x_t.shape)
+
+            # Determine predicted x_start mean (pred_xstart) depending on model_mean_type
+            if self.model_mean_type == ModelMeanType.PREVIOUS_X:
+                pred_xstart = self._predict_xstart_from_xprev(x_t=x_t, t=t, xprev=model_output)
+            elif self.model_mean_type == ModelMeanType.START_X:
+                pred_xstart = model_output
+            elif self.model_mean_type == ModelMeanType.EPSILON:
+                pred_xstart = self._predict_xstart_from_eps(x_t=x_t, t=t, eps=model_output)
+            else:
+                raise NotImplementedError(self.model_mean_type)
+
+            # Now compute implied variance for pred_xstart (from model output variance)
+            # Transform depending on what the model predicted:
+            # - If model predicted EPSILON: x0 = A*x_t - B*eps  => var_x0 = (B^2) * var_eps
+            # - If model predicted START_X: var_x0 = var_start (direct)
+            # - If model predicted PREVIOUS_X: x0 = (1/coef1)*xprev - (coef2/coef1)*x_t => var_x0 = (1/coef1)^2 * var_xprev
+            if self.model_mean_type == ModelMeanType.EPSILON:
+                # factor B = sqrt_recipm1_alphas_cumprod
+                factor = _extract_into_tensor(self.sqrt_recipm1_alphas_cumprod, t, x_t.shape)
+                var_xstart = (factor ** 2) * model_variance_output
+            elif self.model_mean_type == ModelMeanType.START_X:
+                var_xstart = model_variance_output
+            elif self.model_mean_type == ModelMeanType.PREVIOUS_X:
+                coef1 = _extract_into_tensor(self.posterior_mean_coef1, t, x_t.shape)
+                inv_coef1 = 1.0 / coef1
+                var_xstart = (inv_coef1 ** 2) * model_variance_output
+            else:
+                # Fallback: use posterior variance
+                var_xstart = _extract_into_tensor(self.posterior_variance, t, x_t.shape)
+
+            # Convert var -> std for CRPS and clip to avoid numerical problems
+            std_xstart = th.sqrt(th.clamp(var_xstart, min=1e-12))
+
+            # Compute CRPS per element then average (mean_flat keeps per-batch mean)
+            crps_elem = self._crps_gaussian(mu=pred_xstart, sigma=std_xstart, y=x_start)
+            # crps_elem shape: same as x_start. Average across non-batch dims using mean_flat
+            terms["crps"] = mean_flat(crps_elem)
+
+            # Compose final loss: if VB present add it, otherwise loss is CRPS
+            if "vb" in terms:
+                terms["loss"] = terms["crps"] + terms["vb"]
+            else:
+                terms["loss"] = terms["crps"]
         else:
             raise NotImplementedError(self.loss_type)
 

@@ -17,20 +17,14 @@ class TrainLoop:
         model,
         diffusion,
         data,                 # DataLoader yielding (era5_batch, cerra_batch)
-        batch_size,
-        microbatch,
-        lr,
-        ema_rate,
-        log_interval=1,
-        save_interval=2,
-        use_fp16=False,
-        fp16_scale_growth=1e-3,
+        lr=1e-4,
         steps=50000,
         device=None,
+        save_interval=1000,
         outdir="outputs",
         weight_decay=0.0,
         schedule_sampler=None,
-        lr_anneal_steps=0,
+        microbatch=-1,
     ):
         self.model = model
         self.diffusion = diffusion
@@ -40,13 +34,12 @@ class TrainLoop:
         self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
         self.opt = AdamW(self.model.parameters(), lr=self.lr, weight_decay=weight_decay)
         self.save_interval = int(save_interval)
-        self.log_interval = int(log_interval)
         self.outdir = outdir
         os.makedirs(self.outdir, exist_ok=True)
         self.schedule_sampler = schedule_sampler
         self.microbatch = microbatch if microbatch > 0 else None
 
-        # get num_timesteps if available
+        # get num_timesteps if available (DDPM)
         self.num_timesteps = getattr(self.diffusion, "num_timesteps", None)
         if self.num_timesteps is None and hasattr(self.diffusion, "use_timesteps"):
             try:
@@ -54,11 +47,16 @@ class TrainLoop:
             except Exception:
                 self.num_timesteps = None
 
+        # detect SDE-style diffusion by presence of sample_q & marginal_prob
+        self.is_sde = callable(getattr(self.diffusion, "sample_q", None)) and callable(getattr(self.diffusion, "marginal_prob", None))
+        # if SDE has 'N' attribute (number of discrete steps), use it for mapping; fallback to num_timesteps
+        self.sde_N = getattr(self.diffusion, "N", None)
+
     def _sample_timesteps_and_weights(self, batch_size, device):
         if self.schedule_sampler is not None:
             t, weights = self.schedule_sampler.sample(batch_size, device)
             return t.long(), weights.float()
-        # uniform random timesteps
+        # uniform random timesteps for DDPM (integer indices)
         if self.num_timesteps is None:
             raise ValueError("Cannot sample timesteps: diffusion.num_timesteps unknown and no schedule_sampler provided.")
         t = torch.randint(low=0, high=self.num_timesteps, size=(batch_size,), device=device, dtype=torch.long)
@@ -98,22 +96,70 @@ class TrainLoop:
                     xb = cerra_batch[i : i + micro]
                     cond_slice = era5_batch[i : i + micro]
 
-                    # sample timesteps & weights
-                    t, weights = self._sample_timesteps_and_weights(xb.shape[0], device=self.device)
+                    # SDE branch: use continuous t in [0,1] and sample q(x_t | x_0)
+                    if self.is_sde:
+                        batch_size_mb = xb.shape[0]
+                        # sample continuous times t ~ Uniform(0,1), shape [B]
+                        t_cont = torch.rand(batch_size_mb, device=self.device, dtype=torch.float32)
 
-                    model_kwargs = {"cond": cond_slice}
+                        # sample x_t and underlying noise eps from the SDE marginal
+                        xt, eps = self.diffusion.sample_q(xb, t_cont)
 
-                    losses = self.diffusion.training_losses(
-                        self.model, xb, t, model_kwargs={"cond": cond_slice}
-                    )
+                        # Determine what to pass to model as timestep argument:
+                        # Many UNet implementations expect integer timesteps; if so, map t_cont -> integer indices.
+                        # Use sde_N (discrete N) if available, else fallback to num_timesteps-1
+                        if self.sde_N is not None:
+                            max_idx = max(1, int(self.sde_N) - 1)
+                        elif self.num_timesteps is not None:
+                            max_idx = max(1, int(self.num_timesteps) - 1)
+                        else:
+                            max_idx = 1
 
-                    if "loss" not in losses:
-                        raise RuntimeError("diffusion.training_losses must return dict containing 'loss' key.")
+                        # integer timestep index for model embedding (safe fallback)
+                        t_model_idx = (t_cont * float(max_idx))
+                        # If model expects integer indices, convert to long; otherwise many models accept float and embed accordingly.
+                        # We'll attempt to pass long indices if model's forward seems to expect integer timesteps.
+                        # Safe approach: pass t_model_idx.long() \u2014 if model expects float it will cast; if not, this is required.
+                        t_for_model = t_model_idx.long()
 
-                    loss = (losses["loss"] * weights).mean()
+                        model_kwargs = {"cond": cond_slice}
 
-                    self.opt.zero_grad()
-                    loss.backward()
+                        # Forward pass: expect model signature model(x, t, **model_kwargs)
+                        score_pred = self.model(xt, t_for_model, **model_kwargs)
+
+                        # Compute target score: -eps / std where std = diffusion.marginal_prob(x0, t).std
+                        _, std = self.diffusion.marginal_prob(xb, t_cont)
+                        # ensure std broadcastable: [B,1,1,1]
+                        target = -eps / std
+
+                        # Compute per-sample MSE (spatial mean) and final scalar loss
+                        per_sample_sq = ((score_pred - target) ** 2).view(xb.shape[0], -1).mean(dim=1)  # [B]
+                        loss = per_sample_sq.mean()
+                        losses = {"loss": loss, "mse": per_sample_sq}
+
+                        # No extra weights from sampler in SDE branch (uniform)
+                        weights = torch.ones_like(per_sample_sq, device=self.device, dtype=torch.float)
+
+                        # Backprop / step
+                        self.opt.zero_grad()
+                        loss.backward()
+
+                    else:
+                        # DDPM branch: use existing diffusion.training_losses
+                        t, weights = self._sample_timesteps_and_weights(xb.shape[0], device=self.device)
+                        model_kwargs = {"cond": cond_slice}
+
+                        losses = self.diffusion.training_losses(
+                            self.model, xb, t, model_kwargs=model_kwargs
+                        )
+
+                        if "loss" not in losses:
+                            raise RuntimeError("diffusion.training_losses must return dict containing 'loss' key.")
+
+                        loss = (losses["loss"] * weights).mean()
+
+                        self.opt.zero_grad()
+                        loss.backward()
 
                     # ---- extra logging: gradient norm ----
                     grad_norm = 0.0
@@ -129,7 +175,9 @@ class TrainLoop:
                     logger.logkv("loss", loss.item())
                     logger.logkv("grad_norm", grad_norm)
                     if "mse" in losses:
-                        logger.logkv("mse", losses["mse"].mean().item())
+                        # losses["mse"] may be per-sample; take mean for logging
+                        mse_val = losses["mse"].mean().item() if isinstance(losses["mse"], torch.Tensor) else float(losses["mse"])
+                        logger.logkv("mse", mse_val)
                     if "vb" in losses:
                         logger.logkv("vb", losses["vb"].mean().item())
 
@@ -137,16 +185,13 @@ class TrainLoop:
                     logger.logkv_mean("loss_mean", loss.item())
                     logger.logkv_mean("grad_norm_mean", grad_norm)
                     if "mse" in losses:
-                        logger.logkv_mean("mse_mean", losses["mse"].mean().item())
+                        logger.logkv_mean("mse_mean", mse_val)
                     if "vb" in losses:
                         logger.logkv_mean("vb_mean", losses["vb"].mean().item())
 
                 if step % 10 == 0:
                     print(f"[step {step}] loss = {total_loss:.6f}")
                     logger.logkv("step", step)
-
-                if step % self.log_interval == 0:
-                    logger.dumpkvs()
 
                 if step % self.save_interval == 0:
                     ckpt_path = os.path.join(self.outdir, f"model{step:06d}.pt")

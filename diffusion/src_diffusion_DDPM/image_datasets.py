@@ -46,19 +46,19 @@ class PairedDataset0h(Dataset):
     def _make_pairs(self, era5_paths, cerra_paths):
         pairs = []
         # Map timestamp prefix to path
-        carra_dict = {}
+        cerra_dict = {}
         for p in cerra_paths:
             base = os.path.basename(p).split("_")[-2]  # YYYYMMDDHH
-            carra_dict[base] = p
+            cerra_dict[base] = p
 
         for e in era5_paths:
             parts = os.path.basename(e).split("_")
             ts = parts[-2]  # YYYYMMDDHH
             # match with same timestamp (0h difference)
-            if ts in carra_dict:
-                pairs.append((e, carra_dict[ts]))
+            if ts in cerra_dict:
+                pairs.append((e, cerra_dict[ts]))
         if len(pairs) == 0:
-            raise RuntimeError("No ERA5->CERRA2 0h pairs found.")
+            raise RuntimeError("No ERA5->CERRA 0h pairs found.")
         return pairs
 
     def __len__(self):
