@@ -1,0 +1,116 @@
+#!/bin/bash
+#=========================================================
+#SBATCH --job-name=Eval_UQ
+#SBATCH --output=Eval_UQ_%A_%a.out
+#SBATCH --error=Eval_UQ_%A_%a.out
+#SBATCH --qos=ng
+#SBATCH --nodes=1
+#SBATCH --mem=60GB
+#SBATCH --gpus=1
+#SBATCH --time=48:00:00
+#SBATCH --array=0-3
+#=========================================================
+
+set -evx
+
+# ---------------- Load Environment ----------------
+module load conda
+conda activate ddenv_v2
+
+export OMP_NUM_THREADS=1
+export NCCL_DEBUG=INFO
+
+# ===================== Configuration =====================
+VAR="t2m"
+TYPE="DDPM_2015to2023"
+SCR="${PWD}"
+MAINDIR="/ec/res4/scratch/swe4281/CERRA_DATA2026/PLOTS_ALL_YY2015_2024"
+MODEL_SRC="${MAINDIR}/ML_DDPM/${TYPE}"
+ERRA_ENS="${MAINDIR}/TRAIN_IN"
+BASE_OUTPUT="./ML_SAMPLE_UQ"
+mkdir -p ${BASE_OUTPUT}
+
+
+# ===================== Define 4 Dates =====================
+DATE_ARRAY=()
+for t in 0 6 12 18; do
+  DATE_ARRAY+=($(date -u -d "2015-01-01 +${t} hour" +"%Y%m%d%H"))
+done
+
+# Select date based on SLURM array ID
+YYMMDDHH=${DATE_ARRAY[$SLURM_ARRAY_TASK_ID]}
+YYMMDD=${YYMMDDHH:0:8}
+HH=${YYMMDDHH:8:2}
+
+echo "=================================================="
+echo "SLURM TASK ID: $SLURM_ARRAY_TASK_ID"
+echo "Processing date: $YYMMDDHH"
+echo "=================================================="
+
+# ===================== Temporary Workspace =====================
+TMP="${SCR}/tmp_UQ/tmp_${VAR}_${YYMMDDHH}"
+mkdir -p "${TMP}/ERA5_UQ" "${TMP}/CERRA_UQ" "${TMP}/${VAR}"
+
+OUTPUT_UQ="${BASE_OUTPUT}/${YYMMDDHH}_1"
+mkdir -p "${OUTPUT_UQ}"
+
+# ===================== Model Checkpoints =====================
+CHECKPOINTS=(10 12 14 16 18 20)
+
+for ii in "${CHECKPOINTS[@]}"; do
+  SRC_CHECKPOINT="${MODEL_SRC}/model0${ii}000.pt"
+  if [ -f "${SRC_CHECKPOINT}" ]; then
+    ln -sf "${SRC_CHECKPOINT}" "${TMP}/${VAR}/"
+  else
+    echo "Warning: checkpoint not found ${SRC_CHECKPOINT}"
+  fi
+done
+
+# ===================== Copy Input Files =====================
+ERA5_FILE="${ERRA_ENS}/fullbleed_${VAR}_era5_std_${YYMMDD}_${HH}00.png"
+CERRA_FILE="${ERRA_ENS}/fullbleed_${VAR}_cerra_std_${YYMMDD}_${HH}00.png"
+
+cp -f "${ERA5_FILE}" "${TMP}/ERA5_UQ/" 2>/dev/null || true
+cp -f "${CERRA_FILE}" "${TMP}/CERRA_UQ/" 2>/dev/null || true
+
+# Check if input exists
+NUM_FILES=$(ls -1 "${TMP}/ERA5_UQ"/*.png 2>/dev/null | wc -l)
+if [ "${NUM_FILES}" -eq 0 ]; then
+  echo "No input files found for ${YYMMDDHH}. Exiting."
+  exit 0
+fi
+
+# ===================== UQ Evaluation =====================
+echo "Starting evaluation for ${YYMMDDHH}"
+
+# ---------------- Python Parameters ----------------
+SAMPLE_SIZE=20
+IMAGE_SIZE=256
+NUM_CHANL=64
+RES_BLOCK=2
+NUM_HEAD=4
+DIFFUSION_STEP=4000
+
+python3 evaluation.py \
+  --checkpoint_dir "${TMP}/${VAR}" \
+  --era5_dir "${TMP}/ERA5_UQ" \
+  --cerra_dir "${TMP}/CERRA_UQ" \
+  --output_dir "${OUTPUT_UQ}" \
+  --image_size ${IMAGE_SIZE} \
+  --batch_size 1 \
+  --num_samples ${SAMPLE_SIZE} \
+  --cond_key "" \
+  --num_channels ${NUM_CHANL} \
+  --num_res_blocks ${RES_BLOCK} \
+  --num_heads ${NUM_HEAD} \
+  --attention_resolutions "16,8" \
+  --diffusion_steps ${DIFFUSION_STEP}
+
+echo "Completed ${YYMMDDHH}"
+echo "Output saved to ${OUTPUT_UQ}"
+
+# Cleanup
+rm -rf "${TMP}"
+
+echo "Task ${SLURM_ARRAY_TASK_ID} finished successfully!"
+exit 0

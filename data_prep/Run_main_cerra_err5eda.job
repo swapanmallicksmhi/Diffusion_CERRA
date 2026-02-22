@@ -1,0 +1,94 @@
+#!/bin/bash
+#===============================================================================
+# Author         : Swapan Mallick, SMHI
+# Date Created   : 15/12/2025
+#===============================================================================
+
+#-------------------------------
+#SBATCH --job-name=proces_cerra_era
+#SBATCH --output=proces_dataextract.log
+#SBATCH --error=proces_dataextract.log
+#SBATCH --qos=nf
+#SBATCH --nodes=1
+#SBATCH --time=48:00:00
+#-------------------------------
+
+# Load modules and activate environment
+set -evx
+module load conda
+conda activate climate
+
+# ---------------------------
+# Define paths
+# ---------------------------
+VAR="t2m"
+
+# Generate 6-hourly DATE_ARRAY automatically
+DATE_ARRAY=()
+for t in $(seq 0 6 124); do  # 124 for 31 days
+  DATE_ARRAY+=($(date -u -d "2020-01-01 +${t} hour" +"%Y%m%d%H"))
+done
+
+SCR=${PWD}
+CERRADATA="/lus/h2resw01/scratch/swe4281/CERRA_DATA2026/CERRA_DATA"
+ERRA5EDA="/lus/h2resw01/scratch/swe4281/CERRA_DATA2026/ERA5EDA_DATA"
+OUTPUT="/lus/h2resw01/scratch/swe4281/CERRA_DATA2026/PROCESS/"
+#
+mkdir -p "${OUTPUT}/plots_cerra"
+mkdir -p "${OUTPUT}/netcdf_cerra"
+mkdir -p "${OUTPUT}/plots_era5eda"
+mkdir -p "${OUTPUT}/netcdf_era5eda"
+#
+mkdir -p "${OUTPUT}/netcdf_final"
+mkdir -p "${OUTPUT}/comparisons_final"
+
+
+# ---------------------------
+# Loop through each date
+# ---------------------------
+for YYMMDDHH in "${DATE_ARRAY[@]}"; do
+    echo "=================================================="
+    echo "Processing date: $YYMMDDHH "
+    echo "=================================================="
+
+    YYYY=${YYMMDDHH:0:4}
+    MM=${YYMMDDHH:4:2}
+    DD=${YYMMDDHH:6:2}
+    HH=${YYMMDDHH:8:2}
+    YYMM=${YYYY}${MM}
+    echo ${YYYY}${MM}
+
+    TMP="${SCR}/tmp_${VAR}_${YYMMDDHH}"
+    rm -rf ${TMP}
+    mkdir -p ${TMP}
+    cd ${TMP}
+
+    echo "Copying data files for date: $YYMMDDHH"
+    echo ${ERRA5EDA}/erra5eda_${VAR}_${YYMM}_${HH}00.nc
+    echo ${CERRADATA}/cerra_${VAR}_${YYMM}_${HH}00.nc
+    ln -sf ${ERRA5EDA}/erra5eda_${VAR}_${YYMM}_${HH}00.nc era5eda_${HH}.nc
+    ln -sf ${CERRADATA}/cerra_${VAR}_${YYMM}_${HH}00.nc  cerra_${HH}.nc
+
+    #exit 0
+
+    echo "Verifying copied files:"
+    ls -la ${TMP}/
+    python3 ${SCR}/main_cerra_err5eda.py ${HH}
+    # move all the output in a safe place
+    mv ${TMP}/plots_cerra/*        ${OUTPUT}/plots_cerra/
+    mv ${TMP}/netcdf_cerra/*       ${OUTPUT}/netcdf_cerra/
+    mv ${TMP}/plots_era5eda/*      ${OUTPUT}/plots_era5eda/
+    mv ${TMP}/netcdf_era5eda/*     ${OUTPUT}/netcdf_era5eda/
+    mv ${TMP}/netcdf_final/*       ${OUTPUT}/netcdf_final/
+    mv ${TMP}/comparisons_final/*  ${OUTPUT}/comparisons_final/
+    rm -rf ${TMP}
+    cd ${SCR}
+    echo "=================================================="
+    echo "Completed processing date: $YYMM$HH"
+    echo "=================================================="
+    echo ""
+
+done
+
+echo "All dates processed successfully!"
+exit 0
