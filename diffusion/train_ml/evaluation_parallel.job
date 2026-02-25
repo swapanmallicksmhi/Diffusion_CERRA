@@ -1,0 +1,150 @@
+#!/bin/bash
+#=========================================================
+#SBATCH --job-name=evaluation
+#SBATCH --output=evaluation_%A_%a.out
+#SBATCH --error=evaluation_%A_%a.out
+#SBATCH --qos=ng
+#SBATCH --nodes=1
+#SBATCH --mem=60GB
+#SBATCH --gpus=1
+#SBATCH --time=36:00:00
+#SBATCH --array=0-3
+#-------------------------------
+
+set -evx
+
+# ---------------- Load Environment ----------------
+module load conda
+conda activate ddenv_v2
+
+export OMP_NUM_THREADS=1
+export NCCL_DEBUG=INFO
+
+# ==================== PRE-DEFINED INPUTS ====================
+TYPE="DDPM"
+ZARR_PATH="/lus/h2resw01/scratch/swe4281/CERRA_DATA2026/ML_DATA_ALL/2024.zarr"
+CHECKPOINT_DIR="/ec/res4/scratch/swe4281/CERRA_DATA2026/DDMP_MODEL/DDPM_mlcheck_zarr"
+BASE_OUTPUT="./checkpoint_comparison_$(date +%Y%m%d_%H%M%S)"
+
+# ===================== Define 4 UTC Times =====================
+UTC_HOURS=(0 6 12 18)
+SELECTED_HOUR=${UTC_HOURS[$SLURM_ARRAY_TASK_ID]}
+
+# Base date (modify as needed)
+BASE_DATE="2024-06-01"
+COND_DATETIME="${BASE_DATE} ${SELECTED_HOUR}:00:00"
+
+echo "=================================================="
+echo "SLURM TASK ID: $SLURM_ARRAY_TASK_ID"
+echo "Processing UTC time: ${SELECTED_HOUR}:00"
+echo "Full datetime: ${COND_DATETIME}"
+
+# Explicit list of checkpoint files (in order of training steps)
+CHECKPOINT_FILES="
+model010000.pt
+model012000.pt
+model014000.pt
+model016000.pt
+"
+
+# Model configuration - BOOLEAN FLAGS (no values)
+IN_CHANNELS=2
+IMAGE_SIZE=256
+NUM_CHANNELS=64
+NUM_RES_BLOCKS=2
+NUM_HEADS=4
+ATTENTION_RESOLUTIONS="16,8"
+DROPOUT=0.0
+LEARN_SIGMA=""  # Empty = False, set to "--learn_sigma" to enable
+CLASS_COND=""   # Empty = False, set to "--class_cond" to enable
+NOISE_SCHEDULE="linear"
+USE_SCALE_SHIFT_NORM="--use_scale_shift_norm"  # Set to flag to enable, empty to disable
+
+# Generation parameters
+NUM_SAMPLES=10
+DIFFUSION_STEPS=4000
+TIMESTEP_RESPACING="4000"
+
+# Geographic domain (Scandinavia focus)
+LON_MIN=4
+LON_MAX=30
+LAT_MIN=54
+LAT_MAX=71
+
+# Validation options
+SUMMARY_FILE="checkpoint_summary_utc${SELECTED_HOUR}.txt"
+
+# ==================== OUTPUT SETUP ====================
+# Create UTC-specific output subdirectory
+OUTPUT="${BASE_OUTPUT}/utc_${SELECTED_HOUR}"
+mkdir -p ${OUTPUT}
+echo "Output directory: ${OUTPUT}"
+echo "Checkpoint directory: ${CHECKPOINT_DIR}"
+echo "Using Zarr data: ${ZARR_PATH}"
+echo "Conditioning datetime: ${COND_DATETIME}"
+echo "Geographic domain: lon=[${LON_MIN}, ${LON_MAX}], lat=[${LAT_MIN}, ${LAT_MAX}]"
+echo "Generating ${NUM_SAMPLES} samples per checkpoint"
+echo ""
+
+# List checkpoints to process
+echo "Checkpoints to process (in order):"
+CHECKPOINT_LIST=""
+for ckpt in ${CHECKPOINT_FILES}; do
+    if [ -f "${CHECKPOINT_DIR}/${ckpt}" ]; then
+        echo "  - ${ckpt}"
+        CHECKPOINT_LIST="${CHECKPOINT_LIST} ${ckpt}"
+    else
+        echo "  - ${ckpt} (WARNING: not found)"
+    fi
+done
+echo ""
+
+# Create a temporary file with full checkpoint paths
+TEMP_CHECKPOINT_LIST="${OUTPUT}/checkpoint_list.txt"
+> ${TEMP_CHECKPOINT_LIST}
+for ckpt in ${CHECKPOINT_FILES}; do
+    if [ -f "${CHECKPOINT_DIR}/${ckpt}" ]; then
+        echo "${CHECKPOINT_DIR}/${ckpt}" >> ${TEMP_CHECKPOINT_LIST}
+    fi
+done
+
+echo "Checkpoint list saved to: ${TEMP_CHECKPOINT_LIST}"
+echo ""
+
+# Set CUDA device based on array task ID
+export CUDA_VISIBLE_DEVICES=$SLURM_ARRAY_TASK_ID
+echo "Using GPU: $CUDA_VISIBLE_DEVICES"
+
+# ==================== LAUNCH COMPARISON ====================
+python3 evaluation_main_parallel.py \
+  --checkpoint_list "${TEMP_CHECKPOINT_LIST}" \
+  --zarr_path "${ZARR_PATH}" \
+  --output_dir "${BASE_OUTPUT}" \
+  --num_samples ${NUM_SAMPLES} \
+  --image_size ${IMAGE_SIZE} \
+  --in_channels ${IN_CHANNELS} \
+  --num_channels ${NUM_CHANNELS} \
+  --num_res_blocks ${NUM_RES_BLOCKS} \
+  --num_heads ${NUM_HEADS} \
+  --attention_resolutions "${ATTENTION_RESOLUTIONS}" \
+  --dropout ${DROPOUT} \
+  ${LEARN_SIGMA} \
+  ${CLASS_COND} \
+  --noise_schedule "${NOISE_SCHEDULE}" \
+  ${USE_SCALE_SHIFT_NORM} \
+  --diffusion_steps ${DIFFUSION_STEPS} \
+  --timestep_respacing "${TIMESTEP_RESPACING}" \
+  --use_real_cond \
+  --cond_datetime "${COND_DATETIME}" \
+  --lon_min ${LON_MIN} \
+  --lon_max ${LON_MAX} \
+  --lat_min ${LAT_MIN} \
+  --lat_max ${LAT_MAX} \
+  --save_best_samples \
+  --summary_file "${SUMMARY_FILE}" \
+  --array_task_id ${SLURM_ARRAY_TASK_ID}
+
+echo "Task ${SLURM_ARRAY_TASK_ID} (UTC ${SELECTED_HOUR}) finished successfully!"
+
+# ========================================
+exit

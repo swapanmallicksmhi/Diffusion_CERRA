@@ -273,7 +273,7 @@ class UNetModel(nn.Module):
                  attention_resolutions, dropout=0, channel_mult=(1, 2, 4, 8),
                  conv_resample=True, dims=2, num_classes=None, use_checkpoint=False,
                  num_heads=1, num_heads_upsample=-1, use_scale_shift_norm=False,
-                 cond_channels: int = 3, cond_attn_heads: int = 4):
+                 cond_channels=None, cond_attn_heads=4):
         super().__init__()
 
         if num_heads_upsample == -1:
@@ -342,8 +342,7 @@ class UNetModel(nn.Module):
 
         # Cross-attention module (applied after middle block) if conditioning enabled
         if self.cond_channels is not None:
-            # cond_proj to convert cond_channels -> model_channels for attention
-            self.cond_proj = conv_nd(dims, self.cond_channels, model_channels, 1)
+            self.cond_proj = conv_nd(dims, in_channels, model_channels, 1)
             self.cross_attn_mid = CrossAttentionMid(query_dim=ch, cond_dim=model_channels, num_heads=self.cond_attn_heads)
         else:
             self.cond_proj = None

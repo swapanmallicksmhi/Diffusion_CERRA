@@ -1,0 +1,138 @@
+#!/bin/sh
+#-------------------------------
+#SBATCH --job-name=ckpt_comparison
+#SBATCH --output=ckpt_comparison.out
+#SBATCH --error=ckpt_comparison.out
+#SBATCH --qos=ng
+#SBATCH --nodes=1
+#SBATCH --mem=60GB
+#SBATCH --gpus=1
+#SBATCH --time=36:00:00
+#-------------------------------
+
+set -evx
+module load conda
+conda activate ddenv_v2
+
+export OMP_NUM_THREADS=1
+export NCCL_DEBUG=INFO
+
+# ==================== PRE-DEFINED INPUTS ====================
+TYPE="DDPM"
+ZARR_PATH="/lus/h2resw01/scratch/swe4281/CERRA_DATA2026/ML_DATA_ALL/2024.zarr"
+CHECKPOINT_DIR="/ec/res4/scratch/swe4281/CERRA_DATA2026/DDMP_MODEL/DDPM_mlcheck_zarr"
+OUTPUT="./checkpoint_comparison_$(date +%Y%m%d_%H%M%S)"
+
+# Explicit list of checkpoint files (in order of training steps)
+CHECKPOINT_FILES="
+model000000.pt
+model002000.pt
+model004000.pt
+model006000.pt
+model008000.pt
+model010000.pt
+model012000.pt
+model014000.pt
+model016000.pt
+model018000.pt
+model020000.pt
+model022000.pt
+model024000.pt
+model026000.pt
+model028000.pt
+model030000.pt
+"
+
+# Model configuration - BOOLEAN FLAGS (no values)
+IN_CHANNELS=2
+IMAGE_SIZE=256
+NUM_CHANNELS=64
+NUM_RES_BLOCKS=2
+NUM_HEADS=4
+ATTENTION_RESOLUTIONS="16,8"
+DROPOUT=0.0
+LEARN_SIGMA=""  # Empty = False, set to "--learn_sigma" to enable
+CLASS_COND=""   # Empty = False, set to "--class_cond" to enable
+NOISE_SCHEDULE="linear"
+USE_SCALE_SHIFT_NORM="--use_scale_shift_norm"  # Set to flag to enable, empty to disable
+
+# Generation parameters
+NUM_SAMPLES=20
+DIFFUSION_STEPS=4000
+TIMESTEP_RESPACING="4000"
+COND_DATETIME="2024-01-15 12:00:00"
+
+# Geographic domain (Scandinavia focus)
+LON_MIN=4
+LON_MAX=30
+LAT_MIN=54
+LAT_MAX=71
+
+# Validation options
+SUMMARY_FILE="checkpoint_summary.txt"
+
+# ==================== OUTPUT SETUP ====================
+mkdir -p ${OUTPUT}
+echo "Output directory: ${OUTPUT}"
+echo "Checkpoint directory: ${CHECKPOINT_DIR}"
+echo "Using Zarr data: ${ZARR_PATH}"
+echo "Conditioning datetime: ${COND_DATETIME}"
+echo "Geographic domain: lon=[${LON_MIN}, ${LON_MAX}], lat=[${LAT_MIN}, ${LAT_MAX}]"
+echo "Generating ${NUM_SAMPLES} samples per checkpoint"
+echo ""
+
+# List checkpoints to process
+echo "Checkpoints to process (in order):"
+CHECKPOINT_LIST=""
+for ckpt in ${CHECKPOINT_FILES}; do
+    if [ -f "${CHECKPOINT_DIR}/${ckpt}" ]; then
+        echo "  - ${ckpt}"
+        CHECKPOINT_LIST="${CHECKPOINT_LIST} ${ckpt}"
+    else
+        echo "  - ${ckpt} (WARNING: not found)"
+    fi
+done
+echo ""
+
+# Create a temporary file with full checkpoint paths
+TEMP_CHECKPOINT_LIST="${OUTPUT}/checkpoint_list.txt"
+> ${TEMP_CHECKPOINT_LIST}
+for ckpt in ${CHECKPOINT_FILES}; do
+    if [ -f "${CHECKPOINT_DIR}/${ckpt}" ]; then
+        echo "${CHECKPOINT_DIR}/${ckpt}" >> ${TEMP_CHECKPOINT_LIST}
+    fi
+done
+
+echo "Checkpoint list saved to: ${TEMP_CHECKPOINT_LIST}"
+echo ""
+
+# ==================== LAUNCH COMPARISON ====================
+python3 evaluation_main.py \
+  --checkpoint_list "${TEMP_CHECKPOINT_LIST}" \
+  --zarr_path "${ZARR_PATH}" \
+  --output_dir "${OUTPUT}" \
+  --num_samples ${NUM_SAMPLES} \
+  --image_size ${IMAGE_SIZE} \
+  --in_channels ${IN_CHANNELS} \
+  --num_channels ${NUM_CHANNELS} \
+  --num_res_blocks ${NUM_RES_BLOCKS} \
+  --num_heads ${NUM_HEADS} \
+  --attention_resolutions "${ATTENTION_RESOLUTIONS}" \
+  --dropout ${DROPOUT} \
+  ${LEARN_SIGMA} \
+  ${CLASS_COND} \
+  --noise_schedule "${NOISE_SCHEDULE}" \
+  ${USE_SCALE_SHIFT_NORM} \
+  --diffusion_steps ${DIFFUSION_STEPS} \
+  --timestep_respacing "${TIMESTEP_RESPACING}" \
+  --use_real_cond \
+  --cond_datetime "${COND_DATETIME}" \
+  --lon_min ${LON_MIN} \
+  --lon_max ${LON_MAX} \
+  --lat_min ${LAT_MIN} \
+  --lat_max ${LAT_MAX} \
+  --save_best_samples \
+  --summary_file "${SUMMARY_FILE}"
+
+# ========================================
+exit

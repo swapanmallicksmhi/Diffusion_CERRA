@@ -78,7 +78,7 @@ class PairedDataset0h(Dataset):
 def load_data(data_dir: str, batch_size: int, image_size: int):
     all_files = [bf.join(data_dir, f) for f in bf.listdir(data_dir) if f.endswith(".png")]
     era5_files = [f for f in all_files if "era5" in f]
-    carra2_files = [f for f in all_files if "carra2" in f]
+    carra2_files = [f for f in all_files if "cerra" in f]
     dataset = PairedDataset0h(era5_files, carra2_files, resolution=image_size)
     loader = DataLoader(dataset, batch_size=batch_size, shuffle=True, drop_last=True)
     return loader

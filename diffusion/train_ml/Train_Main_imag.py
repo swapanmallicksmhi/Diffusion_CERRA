@@ -7,13 +7,13 @@
  Description : 
      Main driver program for training diffusion models on 
      image datasets with Uncertainty Quantification (UQ) 
-     over the CARRA2 domain. The script orchestrates the 
+     over the MetCoOp (subdomain of CERRA) domain. The script orchestrates the 
      model creation, data loading, and iterative training 
      process, while supporting distributed training setups 
      (via torchrun) and logging of outputs.
 
  Author      : Swapan Mallick
- Date        : 9 March 2025
+ Date        : 20 January 2026
  Framework   : PyTorch
 
 -----------------------------------------------------------
@@ -79,6 +79,7 @@ from src_diffusion.diffusion_dist import create_model_and_diffusion, model_and_d
 from src_diffusion.image_datasets import load_data
 from src_diffusion.diffusion_train import TrainLoop
 from src_diffusion import logger
+from src_diffusion.resample import create_named_schedule_sampler # SWAPAN new line for sampler
 
 # small helpers to add dict defaults into argparse and convert args to dict
 def infer_type(value):
@@ -107,12 +108,19 @@ def create_argparser():
         data_dir="",
         TRAIN_OUT="./outputs",
         image_size=64,
-        batch_size=1,
-        microbatch=-1,
-        lr=1e-4,
         steps=20000,
-        save_interval=2000,
-        use_fp16=False,
+        schedule_sampler="uniform", # Sampling schedule for time steps
+        lr=1e-4,                    # Learning rate
+        weight_decay=0.0,           # Optional L2 regularization
+        lr_anneal_steps=0,          # Steps for learning rate annealing (0 disables)
+        batch_size="",              # Number of samples per batch
+        microbatch="",              # Microbatching (-1 disables)
+        ema_rate="0.9999",          # EMA decay rate for model parameters
+        log_interval=100,           # Logging interval (in training steps)
+        save_interval=1000,         # How often to save model checkpoints
+        resume_checkpoint="",       # Path to resume training from a checkpoint
+        use_fp16=False,             # Use mixed precision training (for speed and memory)
+        fp16_scale_growth=1e-3,     # FP16 scaling factor growth
     )
 
     # Add model and diffusion-specific defaults
@@ -165,18 +173,16 @@ def main():
     # IMPORTANT: model_and_diffusion_defaults() should expose 'diffusion_type' and 'loss_type'
     # so they become available in model_diff_kwargs if provided via CLI.
     model, diffusion = create_model_and_diffusion(**model_diff_kwargs)
-
-    # log configuration info (helpful to see whether score-SDE or ddpm was selected)
-    diffusion_type = getattr(args, "diffusion_type", None)
-    loss_type = getattr(args, "loss_type", None)
     logger.configure(dir=args.TRAIN_OUT)
     logger.log("Creating model and diffusion process...")
     logger.log(f"Model device: {device}")
-    logger.log(f"Diffusion type: {diffusion_type}")
-    logger.log(f"Loss type: {loss_type}")
 
-    # Move model to device (TrainLoop will also move; this is safe)
-    model.to(device)
+    # Move model to device
+    model = model.to(device)
+    print(f"Model moved to {device}")
+
+    # Create the schedule sampler for selecting timesteps
+    schedule_sampler = create_named_schedule_sampler(args.schedule_sampler, diffusion)
 
     # Prepare dataset / loader
     logger.log("Loading dataset...")
@@ -196,23 +202,20 @@ def main():
         model=model,
         diffusion=diffusion,
         data=data,
-        #batch_size=args.batch_size,
-        microbatch=args.microbatch,
+        batch_size=args.batch_size,
+        microbatch=int(args.microbatch),
         lr=float(args.lr),
         steps=int(args.steps),
         device=device,
-        save_interval=int(getattr(args, "save_interval", 1000)),
-        outdir=args.TRAIN_OUT
-        #ema_rate=args.ema_rate,
-        #ema_rate="",
-        #log_interval=args.log_interval,
-        #resume_checkpoint=args.resume_checkpoint,
-        #use_checkpoint=args.use_checkpoint,
-        #use_fp16=args.use_fp16,
-        #fp16_scale_growth=args.fp16_scale_growth,
-        #schedule_sampler=schedule_sampler,
-        #weight_decay=args.weight_decay,
-        #lr_anneal_steps=args.lr_anneal_steps,
+        outdir=args.TRAIN_OUT,
+        save_interval=args.save_interval,
+        ema_rate=args.ema_rate,
+        log_interval=args.log_interval,
+        use_fp16=args.use_fp16,
+        fp16_scale_growth=args.fp16_scale_growth,
+        schedule_sampler=schedule_sampler,
+        weight_decay=args.weight_decay,
+        lr_anneal_steps=args.lr_anneal_steps,
     ).run_loop()
 
 if __name__ == "__main__":

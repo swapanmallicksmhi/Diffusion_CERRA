@@ -1,12 +1,9 @@
 """
 Author: Swapan Mallick
 Date : 10 March 2025
-
+Update: zarr input now added 22 February 2026
 Key concept:
 ------------
-To make this a score-based diffusion model (SDE-based)
-Modification create_diffusion_gaussian with score-based diffusion
-
 """
 
 import argparse
@@ -17,7 +14,8 @@ from .respace import SpacedDiffusion, space_timesteps
 from .unet import SuperResModel, UNetModel
 
 NUM_CLASSES = 1000
-#
+
+
 def model_and_diffusion_defaults():
     """
     Defaults for image training.
@@ -42,11 +40,10 @@ def model_and_diffusion_defaults():
         rescale_learned_sigmas=True,
         use_checkpoint=False,
         use_scale_shift_norm=True,
-        # New args
-        diffusion_type="ddpm",        # switch between "ddpm", "vp", "ve"
-        loss_type="score_matching",   # used for score-based SDEs
+        in_channels=3,
     )
-#
+
+
 def create_model_and_diffusion(
     image_size,
     class_cond,
@@ -67,8 +64,7 @@ def create_model_and_diffusion(
     rescale_learned_sigmas,
     use_checkpoint,
     use_scale_shift_norm,
-    diffusion_type="ddpm",     # NEW
-    loss_type="score_matching" # NEW
+    in_channels=3,
 ):
     model = create_model(
         image_size,
@@ -82,8 +78,9 @@ def create_model_and_diffusion(
         num_heads_upsample=num_heads_upsample,
         use_scale_shift_norm=use_scale_shift_norm,
         dropout=dropout,
+        in_channels=in_channels,
     )
-    diffusion = create_diffusion(
+    diffusion = create_diffusion_gaussian(
         steps=diffusion_steps,
         learn_sigma=learn_sigma,
         sigma_small=sigma_small,
@@ -93,8 +90,6 @@ def create_model_and_diffusion(
         rescale_timesteps=rescale_timesteps,
         rescale_learned_sigmas=rescale_learned_sigmas,
         timestep_respacing=timestep_respacing,
-        diffusion_type=diffusion_type,
-        loss_type=loss_type,
     )
     return model, diffusion
 
@@ -111,6 +106,7 @@ def create_model(
     num_heads_upsample,
     use_scale_shift_norm,
     dropout,
+    in_channels=3,
 ):
     if image_size == 256:
         channel_mult = (1, 1, 2, 2, 4, 4)
@@ -126,31 +122,23 @@ def create_model(
         attention_ds.append(image_size // int(res))
 
     return UNetModel(
-        in_channels=3,
+        in_channels=in_channels,
         model_channels=num_channels,
-        out_channels=(3 if not learn_sigma else 6),
+        out_channels=(in_channels if not learn_sigma else in_channels * 2),
         num_res_blocks=num_res_blocks,
         attention_resolutions=tuple(attention_ds),
         dropout=dropout,
         channel_mult=channel_mult,
-        conv_resample="True",
-        #conv_resample=use_conv_resample,
+        conv_resample=True,
         dims=2,
         num_classes=(NUM_CLASSES if class_cond else None),
         use_checkpoint=use_checkpoint,
         num_heads=num_heads,
         num_heads_upsample=num_heads_upsample,
         use_scale_shift_norm=use_scale_shift_norm,
-        cond_channels=3,          # enable conditioning support (ERA5 maps)
-        cond_attn_heads=4,        # number of cross-attention heads
+        cond_channels=in_channels,
+        cond_attn_heads=4,
     )
-    #    channel_mult=channel_mult,
-    #    num_classes=(NUM_CLASSES if class_cond else None),
-    #    use_checkpoint=use_checkpoint,
-    #    num_heads=num_heads,
-    #    num_heads_upsample=num_heads_upsample,
-    #    use_scale_shift_norm=use_scale_shift_norm,
-    #)
 
 
 def sr_model_and_diffusion_defaults():
@@ -184,6 +172,7 @@ def sr_create_model_and_diffusion(
     rescale_learned_sigmas,
     use_checkpoint,
     use_scale_shift_norm,
+    in_channels=3,
 ):
     model = sr_create_model(
         large_size,
@@ -198,6 +187,7 @@ def sr_create_model_and_diffusion(
         num_heads_upsample=num_heads_upsample,
         use_scale_shift_norm=use_scale_shift_norm,
         dropout=dropout,
+        in_channels=in_channels,
     )
     diffusion = create_diffusion_gaussian(
         steps=diffusion_steps,
@@ -225,8 +215,9 @@ def sr_create_model(
     num_heads_upsample,
     use_scale_shift_norm,
     dropout,
+    in_channels=3,
 ):
-    _ = small_size  # hack to prevent unused variable
+    _ = small_size
 
     if large_size == 256:
         channel_mult = (1, 1, 2, 2, 4, 4)
@@ -240,9 +231,9 @@ def sr_create_model(
         attention_ds.append(large_size // int(res))
 
     return SuperResModel(
-        in_channels=3,
+        in_channels=in_channels,
         model_channels=num_channels,
-        out_channels=(3 if not learn_sigma else 6),
+        out_channels=(in_channels if not learn_sigma else in_channels * 2),
         num_res_blocks=num_res_blocks,
         attention_resolutions=tuple(attention_ds),
         dropout=dropout,
@@ -253,80 +244,8 @@ def sr_create_model(
         num_heads_upsample=num_heads_upsample,
         use_scale_shift_norm=use_scale_shift_norm,
     )
-#------------------SWAPAN ALL DDPM, SDM are now added------
-def create_diffusion(
-    *,
-    steps=4000,
-    noise_schedule="linear",
-    use_kl=False,
-    predict_xstart=False,
-    rescale_timesteps=False,
-    rescale_learned_sigmas=False,
-    timestep_respacing="",
-    learn_sigma=False,
-    sigma_small=False,
-    # New args for score-based
-    diffusion_type="ddpm",   # "ddpm", "vp", or "ve"
-    loss_type="score_matching"
-):
-    """
-    Create either a DDPM diffusion or a score-based SDE depending on diffusion_type.
-    """
-    betas = gd.get_named_beta_schedule(noise_schedule, steps)
 
-    if not timestep_respacing:
-        timestep_respacing = [steps]
 
-    if diffusion_type == "ddpm":
-        # Standard Gaussian diffusion (Ho et al.)
-        if use_kl:
-            loss_type_enum = gd.LossType.RESCALED_KL
-        elif rescale_learned_sigmas:
-            loss_type_enum = gd.LossType.RESCALED_MSE
-        else:
-            loss_type_enum = gd.LossType.MSE
-
-        return SpacedDiffusion(
-            use_timesteps=space_timesteps(steps, timestep_respacing),
-            betas=betas,
-            model_mean_type=(
-                gd.ModelMeanType.EPSILON if not predict_xstart else gd.ModelMeanType.START_X
-            ),
-            model_var_type=(
-                (
-                    gd.ModelVarType.FIXED_LARGE
-                    if not sigma_small
-                    else gd.ModelVarType.FIXED_SMALL
-                )
-                if not learn_sigma
-                else gd.ModelVarType.LEARNED_RANGE
-            ),
-            loss_type=loss_type_enum,
-            rescale_timesteps=rescale_timesteps,
-        )
-
-    elif diffusion_type == "vp":
-        # Variance-preserving SDE (Song et al.)
-        from .score_sde import VPSDE
-        return VPSDE(
-            N=steps,
-            betas=betas,
-            loss_type=loss_type,
-        )
-
-    elif diffusion_type == "ve":
-        # Variance-exploding SDE (Song et al.)
-        from .score_sde import VESDE
-        return VESDE(
-            N=steps,
-            sigma_min=0.01,
-            sigma_max=50,
-            loss_type=loss_type,
-        )
-
-    else:
-        raise ValueError(f"Unknown diffusion_type: {diffusion_type}")
-#----------------------------------------------------------------------------------
 def create_diffusion_gaussian(
     *,
     steps=4000,
@@ -348,8 +267,8 @@ def create_diffusion_gaussian(
         loss_type = gd.LossType.MSE
     if not timestep_respacing:
         timestep_respacing = [steps]
-    print('loss_type',loss_type)
-    print('timestep_respacing',[steps])
+    print('loss_type', loss_type)
+    print('timestep_respacing', [steps])
     return SpacedDiffusion(
         use_timesteps=space_timesteps(steps, timestep_respacing),
         betas=betas,

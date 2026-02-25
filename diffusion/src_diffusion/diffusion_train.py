@@ -17,14 +17,20 @@ class TrainLoop:
         model,
         diffusion,
         data,                 # DataLoader yielding (era5_batch, carra2_batch)
-        lr=1e-4,
+        batch_size,
+        microbatch,
+        lr,
+        ema_rate,
+        log_interval=1,
+        save_interval=2,
+        use_fp16=False,
+        fp16_scale_growth=1e-3,
         steps=50000,
         device=None,
-        save_interval=1000,
         outdir="outputs",
         weight_decay=0.0,
         schedule_sampler=None,
-        microbatch=-1,
+        lr_anneal_steps=0,
     ):
         self.model = model
         self.diffusion = diffusion
@@ -34,6 +40,7 @@ class TrainLoop:
         self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
         self.opt = AdamW(self.model.parameters(), lr=self.lr, weight_decay=weight_decay)
         self.save_interval = int(save_interval)
+        self.log_interval = int(log_interval)
         self.outdir = outdir
         os.makedirs(self.outdir, exist_ok=True)
         self.schedule_sampler = schedule_sampler
@@ -137,6 +144,9 @@ class TrainLoop:
                 if step % 10 == 0:
                     print(f"[step {step}] loss = {total_loss:.6f}")
                     logger.logkv("step", step)
+
+                if step % self.log_interval == 0:
+                    logger.dumpkvs()
 
                 if step % self.save_interval == 0:
                     ckpt_path = os.path.join(self.outdir, f"model{step:06d}.pt")
