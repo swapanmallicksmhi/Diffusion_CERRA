@@ -1,0 +1,174 @@
+#!/bin/bash -l
+#SBATCH -A naiss2025-1-5-gpu
+#SBATCH -p gpu
+#SBATCH -J SDM_Jan12UTC
+#SBATCH --output=SDM_Jan12UTC_%A_%a.out
+#SBATCH --error=SDM_Jan12UTC_%A_%a.out
+#SBATCH --nodes=1
+#SBATCH --mem=60GB
+#SBATCH --array=0-30%4
+#SBATCH --gpus=1
+#SBATCH --time=24:00:00
+
+set -evx
+
+ml PDC
+ml miniconda3/25.3.1-1-cpeGNU-24.11
+source activate torch_rocm
+
+PROJECT_ROOT="PATH"
+export PYTHONPATH=${PROJECT_ROOT}:${PYTHONPATH:-}
+export OMP_NUM_THREADS=1
+export NCCL_DEBUG=INFO
+
+TYPE="SDM"
+
+INPUT_VARS=(
+  t2m_era5_mean
+  t2m_era5_std
+  d2m_era5_mean
+  sp_era5_mean
+  #u10_era5_mean
+  #v10_era5_mean
+)
+
+TARGET_VARS=(
+  t2m_cerra_mean
+  t2m_cerra_std
+)
+
+USE_SEASONAL=1
+SEASONAL_CHANNELS=12
+SEASONAL_FLAGS=""
+if [ "${USE_SEASONAL}" = "1" ]; then
+  SEASONAL_FLAGS="--add_seasonal_cond --seasonal_channels ${SEASONAL_CHANNELS}"
+fi
+
+cd "${PROJECT_ROOT}"
+
+SDE_OBJ="epsilon" #SDE_OBJ="score_snr" or "epsilon"
+
+cd src_diffusion
+rm -f diffusion_sde.py
+if [ "${SDE_OBJ}" = "epsilon" ]; then
+    ln -sf diffusion_sde_epsilon.py diffusion_sde.py
+elif [ "${SDE_OBJ}" = "score_snr" ]; then
+    ln -sf diffusion_sde_score_snr.py diffusion_sde.py
+else
+    echo "Unknown SDE_OBJ: ${SDE_OBJ}"
+    exit 1
+fi
+rm -rf __pycache__
+
+cd ..
+rm -rf __pycache__
+
+ZARR_PATH="PATH/all_zarr-out_2024.zarr"
+CHECKPOINT_DIR="PATH/${TYPE}"
+
+SELECTED_HOUR=18
+DAY=$((SLURM_ARRAY_TASK_ID + 1))
+BASE_DATE=$(printf "2024-01-%02d" "${DAY}")
+DATE_TAG="${BASE_DATE//-/}"
+COND_DATETIME="${BASE_DATE} ${SELECTED_HOUR}:00:00"
+
+BASE_OUTPUT="PATH/${TYPE}_seasonalStrongCond_noWind/cfg_1/January/18UTC/${DATE_TAG}"
+mkdir -p "${BASE_OUTPUT}"
+
+CHECKPOINT_FILES="
+ema_050000.pt
+ema_056000.pt
+ema_060000.pt
+ema_066000.pt
+ema_070000.pt
+"
+
+IMAGE_SIZE=256
+NUM_CHANNELS=64
+NUM_RES_BLOCKS=2
+NUM_HEADS=4
+ATTENTION_RESOLUTIONS="16,8"
+DROPOUT=0.0
+LEARN_SIGMA=""
+CLASS_COND=""
+NOISE_SCHEDULE="linear"
+USE_SCALE_SHIFT_NORM="--use_scale_shift_norm"
+
+if [ "${SDE_OBJ}" = "epsilon" ]; then
+    SDE_FLAGS="--sde_loss_type score_mse"
+elif [ "${SDE_OBJ}" = "score_snr" ]; then
+    SDE_FLAGS="--sde_loss_type snr_weighted"
+fi
+
+#Generation parameters
+NUM_SAMPLES=30
+DIFFUSION_STEPS=4000
+TIMESTEP_RESPACING=""
+
+LON_MIN=4
+LON_MAX=25
+LAT_MIN=54
+LAT_MAX=71
+
+SUMMARY_FILE="checkpoint_summary_${DATE_TAG}_utc${SELECTED_HOUR}.txt"
+
+echo "Processing ${COND_DATETIME}"
+echo "Output directory: ${BASE_OUTPUT}"
+
+TEMP_CHECKPOINT_LIST="${BASE_OUTPUT}/checkpoint_list.txt"
+: > "${TEMP_CHECKPOINT_LIST}"
+FOUND_CKPTS=0
+
+for ckpt in ${CHECKPOINT_FILES}; do
+  if [ -f "${CHECKPOINT_DIR}/${ckpt}" ]; then
+    echo "${CHECKPOINT_DIR}/${ckpt}" >> "${TEMP_CHECKPOINT_LIST}"
+    FOUND_CKPTS=$((FOUND_CKPTS + 1))
+  else
+    echo "WARNING: checkpoint not found: ${CHECKPOINT_DIR}/${ckpt}"
+  fi
+done
+
+if [ "${FOUND_CKPTS}" -eq 0 ]; then
+  echo "ERROR: no checkpoints found."
+  exit 1
+fi
+
+export CUDA_VISIBLE_DEVICES=0
+
+python3 train_ml/evaluation_main.py \
+  --checkpoint_list "${TEMP_CHECKPOINT_LIST}" \
+  --zarr_path "${ZARR_PATH}" \
+  --output_dir "${BASE_OUTPUT}" \
+  --num_samples ${NUM_SAMPLES} \
+  --image_size ${IMAGE_SIZE} \
+  --input_vars "${INPUT_VARS[@]}" \
+  --target_vars "${TARGET_VARS[@]}" \
+  ${SEASONAL_FLAGS} \
+  ${SDE_FLAGS} \
+  --num_channels ${NUM_CHANNELS} \
+  --num_res_blocks ${NUM_RES_BLOCKS} \
+  --num_heads ${NUM_HEADS} \
+  --attention_resolutions "${ATTENTION_RESOLUTIONS}" \
+  --dropout ${DROPOUT} \
+  ${LEARN_SIGMA} \
+  ${CLASS_COND} \
+  --noise_schedule "${NOISE_SCHEDULE}" \
+  ${USE_SCALE_SHIFT_NORM} \
+  --diffusion_steps ${DIFFUSION_STEPS} \
+  --timestep_respacing "${TIMESTEP_RESPACING}" \
+  --use_real_cond \
+  --cond_datetime "${COND_DATETIME}" \
+  --lon_min ${LON_MIN} \
+  --lon_max ${LON_MAX} \
+  --lat_min ${LAT_MIN} \
+  --lat_max ${LAT_MAX} \
+  --save_best_samples \
+  --summary_file "${SUMMARY_FILE}" \
+  --diffusion_type vp_sde \
+  --beta_min 0.1 \
+  --beta_max 20.0 \
+  --sampling_eps 1e-3 \
+  --cfg_guidance_scale 1.0
+
+echo "Finished ${COND_DATETIME}"
+exit

@@ -1,0 +1,94 @@
+#!/bin/bash -l
+# ================================================
+#SBATCH -A naiss2025-1-5
+#SBATCH -p shared
+#SBATCH --job-name=check_train_zarr
+#SBATCH --output=check_train_zarr.out
+#SBATCH --error=check_train_zarr.out
+#SBATCH -n 1
+#SBATCH --mem=60G
+#SBATCH --time=36:00:00
+# ================================================
+
+set -x
+
+# ================================================
+# USER-DEFINED VARIABLES
+# ================================================
+
+zarr_path="PATH/all_zarr-out_2015-2023.zar"
+
+# Use the exact Python from torch_rocm
+PYTHON="PATH/.conda/envs/torch_rocm/bin/python"
+
+# ================================================
+# LOAD ENVIRONMENT
+# ================================================
+
+ml PDC
+ml miniconda3/25.3.1-1-cpeGNU-24.11
+
+echo "Using Python:"
+$PYTHON -c "import sys; print(sys.executable)"
+
+echo "Check packages:"
+$PYTHON -c "import zarr, numpy, pandas; print('zarr:', zarr.__version__)"
+
+# ================================================
+# RUN CHECK
+# ================================================
+
+srun -n 1 $PYTHON -u - <<PY
+import zarr
+import numpy as np
+import pandas as pd
+
+zarr_path = "${zarr_path}"
+
+store = zarr.open(zarr_path, mode="r")
+times = pd.to_datetime(store["valid_time"][:], unit="s", origin="unix", utc=True)
+
+vars_ = [
+    "t2m_cerra_mean",
+    "t2m_cerra_std",
+    "t2m_era5_mean",
+    "t2m_era5_std",
+]
+
+valid_times = []
+invalid_times = []
+
+print("Zarr:", zarr_path, flush=True)
+print("Number of time steps:", len(times), flush=True)
+print("Variables:", vars_, flush=True)
+print("=" * 80, flush=True)
+
+for idx, actual in enumerate(times):
+    status = []
+    counts = []
+
+    for v in vars_:
+        arr = store[v][idx].astype("float32")
+        finite = int(np.isfinite(arr).sum())
+        total = int(arr.size)
+
+        status.append(finite == total)
+        counts.append(f"{v}:{finite}/{total}")
+
+    if all(status):
+        valid_times.append((idx, actual))
+    else:
+        invalid_times.append((idx, actual, counts))
+        print(f"INVALID idx {idx:6d} -> {actual} | " + ", ".join(counts), flush=True)
+
+print("=" * 80, flush=True)
+print("Total valid times:", len(valid_times), flush=True)
+print("Total invalid times:", len(invalid_times), flush=True)
+
+if len(invalid_times) == 0:
+    print("All checked fields are finite for all time steps.", flush=True)
+else:
+    print("Invalid time steps:", flush=True)
+    for idx, actual, counts in invalid_times:
+        print(f"idx {idx:6d} -> {actual} | " + ", ".join(counts), flush=True)
+PY

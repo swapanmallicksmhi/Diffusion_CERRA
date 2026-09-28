@@ -1,39 +1,106 @@
-#!/bin/sh
+#!/bin/bash -l
 #-------------------------------
-#SBATCH --job-name=SDM_Training
-#SBATCH --output=t2m_log.out
-#SBATCH --error=t2m_log.out
-#SBATCH --qos=ng
-#SBATCH --nodes=1
+#SBATCH -A naiss2025-1-5-gpu
+#SBATCH -J ZARRSDE_Training
+#SBATCH -p gpu
+#SBATCH --output=SDM_ZARRt2m_log.out
+#SBATCH --error=SDM_ZARRt2m_log.out
+#SBATCH -N 1
 #SBATCH --mem=60GB
-#SBATCH --gpus=4
-#SBATCH --time=36:00:00
+#SBATCH --gpus=1
+#SBATCH --time=24:00:00
 #-------------------------------
 
 set -evx
-module load conda
-conda activate ddenv_v2
+ml PDC
+ml miniconda3/25.3.1-1-cpeGNU-24.11
+source activate torch_rocm
+
+# Change the correct path in all the places.
+
+PROJECT_ROOT="PATH/Diffusion_CERRA/diffusion_April15"
+# project root for imports
+export PYTHONPATH=${PROJECT_ROOT}:${PYTHONPATH:-}
 
 # CUDA-aware MPI & fragmentation mitigation
 export OMPI_MCA_opal_cuda_support=true
 export OMPI_MCA_pml=ucx
 export UCX_MEMTYPE_CACHE=n
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
+export MASTER_PORT=$((10000 + RANDOM % 50000))
 
-VAR="t2m"
-TYPE="FC_SCORE"
-INPUT="/ec/res4/hpcperm/swe4281/DDPM_CARRA2_FINAL/INPUT_PNG/${VAR}"
-OUTPUT="/ec/res4/scratch/swe4281/SEP_FINAL_DDPM/${VAR}/${TYPE}"
-#OUTPUT="/ec/res4/hpcperm/swe4281/DDPM_CARRA2_FINAL/DDPM_MODEL_OCT/${VAR}/${TYPE}"
+INPUT_VARS=(
+  t2m_era5_mean
+  t2m_era5_std
+  d2m_era5_mean
+  sp_era5_mean
+  #u10_era5_mean
+  #v10_era5_mean
+)
+
+TARGET_VARS=(
+  t2m_cerra_mean
+  t2m_cerra_std
+)
+
+USE_SEASONAL=1
+SEASONAL_CHANNELS=12
+
+SEASONAL_FLAGS=""
+if [ "${USE_SEASONAL}" = "1" ]; then
+  SEASONAL_FLAGS="--add_seasonal_cond --seasonal_channels ${SEASONAL_CHANNELS}"
+fi
+
+cd ${PROJECT_ROOT}
+
+SDE_OBJ="epsilon" #SDE_OBJ="score_snr" or "epsilon"
+
+cd src_diffusion
+rm -f diffusion_sde.py
+if [ "${SDE_OBJ}" = "epsilon" ]; then
+    ln -sf diffusion_sde_epsilon.py diffusion_sde.py
+elif [ "${SDE_OBJ}" = "score_snr" ]; then
+    ln -sf diffusion_sde_score_snr.py diffusion_sde.py
+else
+    echo "Unknown SDE_OBJ: ${SDE_OBJ}"
+    exit 1
+fi
+rm -rf __pycache__
+cd ..
+
+rm -rf __pycache__
+
+TYPE="SDM"
+INPUT="/cfs/klemming/scratch/s/swapanm/all_zarr-out_2015-2023.zarr"
+OUTPUT="/cfs/klemming/scratch/s/swapanm/DDPM_StrongCond256/${TYPE}_seasonalStrongCond_noWind_Sigmoid"
+rm -rf ${OUTPUT}
+mkdir -p ${OUTPUT}
+echo  ${OUTPUT}
 
 # Lowered batch + microbatch + enable fp16
-MODEL_FLAGS="--image_size 256 --num_channels 64"   # reduce model size if needed
-TOTALSTEP="--steps 30000"
-TRAIN_FLAGS="--lr 1e-4 --batch_size 8 --microbatch 4 --use_fp16 True"
+MODEL_FLAGS="--save_interval 2000 --image_size 256 --num_channels 64 --diffusion_type vp_sde --beta_min 0.1 --beta_max 20.0 --sampling_eps 1e-3 --cond_dropout_prob 0.1 --cfg_guidance_scale 1.0"
+
+if [ "${SDE_OBJ}" = "epsilon" ]; then
+    SDE_FLAGS="--sde_loss_type score_mse"
+elif [ "${SDE_OBJ}" = "score_snr" ]; then
+    SDE_FLAGS="--sde_loss_type snr_weighted"
+fi
+
+TOTALSTEP="--steps 70000"
+DIFFUSION_STEPS=4000
+TIMESTEP_RESPACING=""
+TRAIN_FLAGS="--lr 5e-5 --batch_size 16 --microbatch 4 --use_fp16 False"
 
 mkdir -p $OUTPUT
 
 # Launch
-srun --mpi=pmi2 torchrun --nproc_per_node=4 Train_Main.py --diffusion_type vp --loss_type score_matching \
-    --data_dir $INPUT --TRAIN_OUT $OUTPUT \
-      $MODEL_FLAGS $TOTALSTEP $TRAIN_FLAGS
+python3 train_ml/Train_main.py \
+  --data_dir $INPUT \
+  --TRAIN_OUT $OUTPUT \
+  --input_vars "${INPUT_VARS[@]}" \
+  --target_vars "${TARGET_VARS[@]}" \
+  ${SEASONAL_FLAGS} \
+  ${SDE_FLAGS} \
+  --diffusion_steps ${DIFFUSION_STEPS} \
+  --timestep_respacing "${TIMESTEP_RESPACING}" \
+  $MODEL_FLAGS $TOTALSTEP $TRAIN_FLAGS

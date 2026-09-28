@@ -1,0 +1,238 @@
+#!/usr/bin/env python3
+
+import os
+import re
+import glob
+import argparse
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+
+
+def parse_args():
+    parser = argparse.ArgumentParser(
+        description="Read checkpoint_comparison.txt files and plot RMSE for all experiments."
+    )
+    parser.add_argument("--output-dir", required=True)
+    parser.add_argument("--season", default="Janurary")
+    return parser.parse_args()
+
+
+def get_experiments(season):
+    return {
+        #"CNT-EXP": f"/cfs/klemming/scratch/y/yarongc/SDM_seasonalStrongCond/cfg_1/January/2024010*/best_overall/checkpoint_comparison.txt",
+        #"EXP-1": f"/cfs/klemming/scratch/y/yarongc/SDM_seasonalStrongCond/cfg_15/January/2024010*/best_overall/checkpoint_comparison.txt",
+        #"EXP-2": f"/cfs/klemming/scratch/y/yarongc/SDM_seasonalStrongCond_5Vars/cfg_1/January/2024010*/best_overall/checkpoint_comparison.txt",
+        #"EXP-3": f"/cfs/klemming/scratch/y/yarongc/SDM_seasonalStrongCond_scoresnr/January/2024010*/best_overall/checkpoint_comparison.txt",
+        #"EXP-4": f"/cfs/klemming/scratch/y/yarongc/DDPM_StrongCond256/MSE/Janurary/2024010*/best_overall/checkpoint_comparison.txt",
+        #"EXP-5": f"/cfs/klemming/scratch/y/yarongc/DDPM_StrongCond256/CRPS/Janurary/2024010*/best_overall/checkpoint_comparison.txt",
+        "CRPS_LINEAR": f"/cfs/klemming/scratch/s/swapanm/DDPM_StrongCond256/CRPS_LINEAR/January/202401*/best_overall/checkpoint_comparison.txt",
+        "CRPS_COSINE": f"/cfs/klemming/scratch/s/swapanm/DDPM_StrongCond256/CRPS_COSINE/January/202401*/best_overall/checkpoint_comparison.txt",
+        "CRPS_SIGMOID": f"/cfs/klemming/scratch/s/swapanm/DDPM_StrongCond256/CRPS_SIGMOID/January/202401*/best_overall/checkpoint_comparison.txt",
+        "CRPS_LINEAR_YA": f"/cfs/klemming/scratch/s/swapanm/DDPM_StrongCond256/CRPS_YARONG/January/202401*/best_overall/checkpoint_comparison.txt",
+    }
+
+
+def extract_date_from_path(path):
+    match = re.search(r"/(\d{8})/best_overall/checkpoint_comparison\.txt", path)
+    if match is None:
+        return None
+    return pd.to_datetime(match.group(1), format="%Y%m%d")
+
+
+def checkpoint_to_number(checkpoint):
+    match = re.search(r"ema_(\d+)", checkpoint)
+    if match is None:
+        return np.nan
+    return int(match.group(1))
+
+
+def clean_rmse(value):
+    return float(value.replace("(", "").replace(")", "").strip())
+
+
+def parse_checkpoint_file(path, experiment):
+    date = extract_date_from_path(path)
+    rows = []
+
+    with open(path, "r") as f:
+        lines = f.readlines()
+
+    for line in lines:
+        line = line.strip()
+
+        if not line.startswith("ema_"):
+            continue
+
+        parts = line.split()
+
+        if len(parts) < 7:
+            print(f"Skipping unreadable line in {path}:\n{line}")
+            continue
+
+        checkpoint = parts[0]
+        best_sample = parts[1]
+        overall_rmse = float(parts[2])
+
+        t2m_mean_sample = parts[3]
+        t2m_mean_rmse = clean_rmse(parts[4])
+
+        t2m_std_sample = parts[5]
+        t2m_std_rmse = clean_rmse(parts[6])
+
+        rows.append(
+            {
+                "experiment": experiment,
+                "date": date,
+                "file": path,
+                "checkpoint": checkpoint,
+                "checkpoint_number": checkpoint_to_number(checkpoint),
+                "best_sample": best_sample,
+                "overall_rmse": overall_rmse,
+                "t2m_cerra_mean_sample": t2m_mean_sample,
+                "t2m_cerra_mean_rmse": t2m_mean_rmse,
+                "t2m_cerra_std_sample": t2m_std_sample,
+                "t2m_cerra_std_rmse": t2m_std_rmse,
+            }
+        )
+
+    return rows
+
+
+def read_all_files(season):
+    experiments = get_experiments(season)
+    all_rows = []
+
+    for exp_name, pattern in experiments.items():
+        files = sorted(glob.glob(pattern))
+        print(f"{exp_name}: found {len(files)} files")
+
+        for path in files:
+            rows = parse_checkpoint_file(path, exp_name)
+            all_rows.extend(rows)
+
+    if len(all_rows) == 0:
+        raise RuntimeError("No checkpoint data found inside the files.")
+
+    df = pd.DataFrame(all_rows)
+    df = df.sort_values(["experiment", "date", "checkpoint_number"])
+
+    return df
+
+
+def setup_plot_style():
+    plt.rcParams.update(
+        {
+            "font.size": 15,
+            "axes.labelsize": 17,
+            "axes.titlesize": 18,
+            "xtick.labelsize": 13,
+            "ytick.labelsize": 14,
+            "legend.fontsize": 11,
+            "axes.linewidth": 1.2,
+            "figure.dpi": 300,
+        }
+    )
+
+
+def plot_metric(df, metric_col, ylabel, title, output_file):
+    setup_plot_style()
+
+    fig, ax = plt.subplots(figsize=(13, 7))
+
+    for exp_name in sorted(df["experiment"].unique()):
+        sub = df[df["experiment"] == exp_name].copy()
+
+        summary = (
+            sub.groupby("checkpoint_number", as_index=False)[metric_col]
+            .mean()
+            .sort_values("checkpoint_number")
+        )
+
+        summary = summary[summary["checkpoint_number"] >= 30000]
+
+        if summary.empty:
+            print(f"Skipping {exp_name}: no checkpoints >= ema_030000")
+            continue
+
+        min_rmse = summary[metric_col].min()
+        min_ckpt = summary.loc[summary[metric_col].idxmin(), "checkpoint_number"]
+
+        legend_label = f"{exp_name} | min={min_rmse:.3f} at ema_{int(min_ckpt):06d}"
+
+        ax.plot(
+            summary["checkpoint_number"],
+            summary[metric_col],
+            marker="o",
+            linewidth=2.5,
+            markersize=7,
+            label=legend_label,
+        )
+
+        ax.scatter(
+            min_ckpt,
+            min_rmse,
+            s=90,
+            edgecolor="black",
+            linewidth=1.2,
+            zorder=5,
+        )
+
+    ax.set_xlabel("Checkpoint")
+    ax.set_ylabel(ylabel)
+    ax.set_title(title)
+
+    ax.grid(True, linestyle="--", linewidth=0.6, alpha=0.6)
+    ax.legend(frameon=True, loc="best")
+
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+
+    xticks = sorted(
+        x for x in df["checkpoint_number"].dropna().unique()
+        if x >= 30000
+    )
+
+    ax.set_xticks(xticks)
+    ax.set_xticklabels([f"ema_{int(x):06d}" for x in xticks], rotation=45, ha="right")
+
+    fig.tight_layout()
+    fig.savefig(output_file, dpi=300, bbox_inches="tight")
+    plt.close()
+
+    print(f"Saved figure:\n{output_file}")
+
+
+def main():
+    args = parse_args()
+
+    os.makedirs(args.output_dir, exist_ok=True)
+
+    df = read_all_files(args.season)
+
+    csv_file = os.path.join(args.output_dir, "checkpoint_rmse_all_experiments.csv")
+    df.to_csv(csv_file, index=False)
+
+    print(f"Saved CSV:\n{csv_file}")
+
+    plot_metric(
+        df,
+        "t2m_cerra_mean_rmse",
+        "RMSE of T2M mean (K)",
+        "Checkpoint-wise RMSE for T2M CERRA mean",
+        os.path.join(args.output_dir, "checkpoint_rmse_t2m_cerra_mean.png"),
+    )
+
+    plot_metric(
+        df,
+        "t2m_cerra_std_rmse",
+        "RMSE of T2M standard deviation (K)",
+        "Checkpoint-wise RMSE for T2M CERRA standard deviation",
+        os.path.join(args.output_dir, "checkpoint_rmse_t2m_cerra_std.png"),
+    )
+
+    print("\nDONE")
+
+
+if __name__ == "__main__":
+    main()

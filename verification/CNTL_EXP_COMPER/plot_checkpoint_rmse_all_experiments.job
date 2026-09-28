@@ -1,0 +1,23 @@
+#!/bin/bash
+#-------------------------------------------------
+##SBATCH --job-name=zarr_plots
+##SBATCH --output=zarr_plots.out
+##SBATCH --error=zarr_plots.out
+##SBATCH --nodes=1
+##SBATCH --mem=60G
+##SBATCH --time=36:00:00
+#-------------------------------------------------
+set -x
+outputdir="/cfs/klemming/scratch/s/swapanm/VERIFICATION_MARCH2026/PAPER"
+SEASON="January"
+mkdir -p ${outputdir}
+
+ml PDC
+ml miniconda3/25.3.1-1-cpeGNU-24.11
+source activate torch_rocm
+
+declare -A EXP_PATHS
+#
+python plot_checkpoint_rmse_all_experiments.py \
+    --season ${SEASON} \
+    --output-dir ${outputdir}
