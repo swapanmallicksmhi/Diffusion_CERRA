@@ -1,0 +1,94 @@
+[ECMWF-INFO -sbatch] - -------------------------------------------------------------------------------------
+[ECMWF-INFO -sbatch] -  This is the ECMWF jobfilter
+[ECMWF-INFO -sbatch] -  +++ Please report issues using the Support portal +++
+[ECMWF-INFO -sbatch] -  +++ https://support.ecmwf.int                     +++
+[ECMWF-INFO -sbatch] -  /usr/local/bin/ecsbatch: size: 53801, mtime: Tue Nov 25 12:31:30 2025
+[ECMWF-INFO -sbatch] - -------------------------------------------------------------------------------------
+[ECMWF-INFO -sbatch] - Time at submit: Fri May 15 11:05:59 2026 (1778843159.6817446) on ac6-100.bullx:/etc/ecmwf/nfs/dh2_perm_b/swe4281/repository/CERRA_Diffusion_git_MARCH/post_process/zarr_plot_ANALYSIS
+[ECMWF-INFO -sbatch] - --- SLURM VARIABLES ---
+[ECMWF-INFO -sbatch] - EC_CLUSTER=ac
+[ECMWF-INFO -sbatch] - SLURM_EXPORT_ENV=ALL
+[ECMWF-INFO -sbatch] - SBATCH_EXPORT=NONE
+[ECMWF-INFO -sbatch] - -----------------------
+[ECMWF-INFO -sbatch] - jobscript: /etc/ecmwf/nfs/dh2_perm_b/swe4281/repository/CERRA_Diffusion_git_MARCH/post_process/zarr_plot_ANALYSIS/run-details.job
+[ECMWF-INFO -sbatch] - --- SCRIPT OPTIONS ---
+[ECMWF-INFO -sbatch] - #SBATCH --job-name=zarr_details
+[ECMWF-INFO -sbatch] - #SBATCH --output=zarr_details.out
+[ECMWF-INFO -sbatch] - #SBATCH --error=zarr_details.out
+[ECMWF-INFO -sbatch] - #SBATCH --nodes=1
+[ECMWF-INFO -sbatch] - #SBATCH --mem=60G
+[ECMWF-INFO -sbatch] - #SBATCH --time=36:00:00
+[ECMWF-INFO -sbatch] - -----------------------
+[ECMWF-INFO -sbatch] - --- POST-PROCESSED OPTIONS ---
+[ECMWF-INFO -sbatch] - ARG --positional=['run-details.job']
+[ECMWF-INFO -sbatch] - ARG --error=zarr_details.out
+[ECMWF-INFO -sbatch] - ARG --job_name=zarr_details
+[ECMWF-INFO -sbatch] - ARG --nodes=1
+[ECMWF-INFO -sbatch] - ARG --output=zarr_details.out
+[ECMWF-INFO -sbatch] - ARG --time=36:00:00
+[ECMWF-INFO -sbatch] - ARG --mem=60G
+[ECMWF-INFO -sbatch] - ------------------------------
+[ECMWF-INFO -sbatch] - No qos requested, assuming qos=nf
+[ECMWF-INFO -sbatch] - jobtag: swe4281-zarr_details-1x2-/etc/ecmwf/nfs/dh2_perm_b/swe4281/repository/CERRA_Diffusion_git_MARCH/post_process/zarr_plot_ANALYSIS/zarr_details.out
+[ECMWF-INFO -sbatch] - ------------------------------
+[ECMWF-INFO -sbatch] - Average Walltime 106 with a Standard Deviation 22
+[ECMWF-INFO -sbatch] - Runtime history
+[ECMWF-INFO -sbatch] -   Date               | Cores   Cluster   Walltime       Mem
+[ECMWF-INFO -sbatch] -   15.05.2026 - 08:51 | 2          ac         84         60G       
+[ECMWF-INFO -sbatch] -   15.05.2026 - 08:40 | 2          ac         128        60G       
+[ECMWF-INFO -sbatch] - ['/usr/bin/sbatch', '--error=zarr_details.out', '--job-name=zarr_details', '--nodes=1', '--output=zarr_details.out', '--time=36:00:00', '--mem=60G', '--qos=nf', '--licenses=h2resw01', '--export=EC_user_time_limit=36:00:00', '/etc/ecmwf/nfs/dh2_perm_b/swe4281/repository/CERRA_Diffusion_git_MARCH/post_process/zarr_plot_ANALYSIS/run-details.job']
+[ECMWF-INFO -sbatch] - sbatch executed on ac
+[ECMWF-INFO -sbatch] - Job queued on ac using method local
+[ECMWF-INFO -sbatch] - Submitted batch job 32445271
+[ECMWF-INFO -ecprofile] /usr/bin/bash NON_INTERACTIVE on ac6-145 at 20260515_110608.744, PID: 2025969, JOBID: 32445271
+[ECMWF-INFO -ecprofile] $SCRATCH=/ec/res4/scratch/swe4281
+[ECMWF-INFO -ecprofile] $PERM=/perm/swe4281
+[ECMWF-INFO -ecprofile] $HPCPERM=/ec/res4/hpcperm/swe4281
+[ECMWF-INFO -ecprofile] $TMPDIR=/etc/ecmwf/ssd/ssd1/tmpdirs/swe4281.32445271
+[ECMWF-INFO -ecprofile] $SCRATCHDIR=/ec/res4/scratchdir/swe4281/7/32445271
+
+Lmod is automatically replacing "prgenv/gnu" with "conda/24.11.3-2".
+
+-------------------------------------------------------------------------------
+There are messages associated with the following module(s):
+-------------------------------------------------------------------------------
+
+conda/24.11.3-2:
+   Using conda effectively disables any other loaded modules. Use "module
+   reset" to return to the default environment.
+
+-------------------------------------------------------------------------------
+
+Opening dataset...
+Time range: 2024-01-01T00:00:00.000000000 to 2024-12-31T18:00:00.000000000
+Saved: cerra_vs_era5_std_Jan_Jun_2024.png
+Opening dataset...
+Time range: 2024-01-01T00:00:00.000000000 to 2024-12-31T18:00:00.000000000
+Saved: cerra_vs_era5_boxplot_Jan_Jun_2024.png
+[ECMWF-INFO -ecepilog] ----------------------------------------------------------------------------------------------------
+[ECMWF-INFO -ecepilog] This is the ECMWF job Epilogue
+[ECMWF-INFO -ecepilog] +++ Please report issues using the Support portal +++
+[ECMWF-INFO -ecepilog] +++ https://support.ecmwf.int                     +++
+[ECMWF-INFO -ecepilog] ----------------------------------------------------------------------------------------------------
+[ECMWF-INFO -ecepilog] Run at 2026-05-15T11:07:33 on ac
+[ECMWF-INFO -ecepilog] JobName                   : zarr_details
+[ECMWF-INFO -ecepilog] JobID                     : 32445271
+[ECMWF-INFO -ecepilog] Submit                    : 2026-05-15T11:05:59
+[ECMWF-INFO -ecepilog] Start                     : 2026-05-15T11:06:03
+[ECMWF-INFO -ecepilog] End                       : 2026-05-15T11:07:33
+[ECMWF-INFO -ecepilog] QueuedTime                : 4.0
+[ECMWF-INFO -ecepilog] ElapsedRaw                : 90
+[ECMWF-INFO -ecepilog] ExitCode                  : 0:0
+[ECMWF-INFO -ecepilog] DerivedExitCode           : 0:0
+[ECMWF-INFO -ecepilog] State                     : COMPLETED
+[ECMWF-INFO -ecepilog] Account                   : sesmhi
+[ECMWF-INFO -ecepilog] QOS                       : nf
+[ECMWF-INFO -ecepilog] User                      : swe4281
+[ECMWF-INFO -ecepilog] StdOut                    : /etc/ecmwf/nfs/dh2_perm_b/swe4281/repository/CERRA_Diffusion_git_MARCH/post_process/zarr_plot_ANALYSIS/zarr_details.out
+[ECMWF-INFO -ecepilog] StdErr                    : /etc/ecmwf/nfs/dh2_perm_b/swe4281/repository/CERRA_Diffusion_git_MARCH/post_process/zarr_plot_ANALYSIS/zarr_details.out
+[ECMWF-INFO -ecepilog] NNodes                    : 1
+[ECMWF-INFO -ecepilog] NCPUS                     : 2
+[ECMWF-INFO -ecepilog] SBU                       : 0.427
+[ECMWF-INFO -ecepilog] jobtag                    : swe4281-zarr_details-1x2-/etc/ecmwf/nfs/dh2_perm_b/swe4281/repository/CERRA_Diffusion_git_MARCH/post_process/zarr_plot_ANALYSIS/zarr_details.out
+[ECMWF-INFO -ecepilog] ----------------------------------------------------------------------------------------------------
+

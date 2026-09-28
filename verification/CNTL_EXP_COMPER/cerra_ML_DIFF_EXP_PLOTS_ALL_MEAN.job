@@ -1,0 +1,56 @@
+#!/bin/bash
+#-------------------------------------------------
+##SBATCH --job-name=zarr_plots
+##SBATCH --output=zarr_plots.out
+##SBATCH --error=zarr_plots.out
+##SBATCH --nodes=1
+##SBATCH --mem=60G
+##SBATCH --time=36:00:00
+#-------------------------------------------------
+set -x
+zarrinput="/cfs/klemming/scratch/s/swapanm/all_zarr-out_2024.zarr"
+#zarrinput="/cfs/klemming/scratch/s/swapanm/VERIFICATION_MARCH2026/CERRA5.5km_JAN2024.zarr"
+outputdir="/cfs/klemming/scratch/s/swapanm/VERIFICATION_MARCH2026/ALL_EXP_DIFF_JAN2024"
+SEASON="January"
+mkdir -p "${outputdir}"
+latmin=54.0
+latmax=71.0
+lonmin=4.0
+lonmax=25.0
+
+variable="t2m_cerra_mean"
+
+ml PDC
+ml miniconda3/25.3.1-1-cpeGNU-24.11
+source activate torch_rocm
+
+declare -A EXP_PATHS
+#
+EXP_PATHS["CNT-EXP"]="/cfs/klemming/scratch/y/yarongc/SDM_seasonalStrongCond/cfg_1/${SEASON}/*/best_overall/best_t2m_cerra_mean*.npy"
+EXP_PATHS["EXP-1"]="/cfs/klemming/scratch/y/yarongc/SDM_seasonalStrongCond/cfg_15/${SEASON}/*/best_overall/best_t2m_cerra_mean*.npy"
+EXP_PATHS["EXP-2"]="/cfs/klemming/scratch/y/yarongc/SDM_seasonalStrongCond_5Vars/cfg_1/${SEASON}/*/best_overall/best_t2m_cerra_mean*.npy"
+EXP_PATHS["EXP-3"]="/cfs/klemming/scratch/y/yarongc/SDM_seasonalStrongCond_scoresnr/${SEASON}/*/best_overall/best_t2m_cerra_mean*.npy"
+EXP_PATHS["EXP-4"]="/cfs/klemming/scratch/y/yarongc/DDPM_StrongCond256/MSE/Janurary/*/best_overall/best_t2m_cerra_mean*.npy"
+EXP_PATHS["EXP-5"]="/cfs/klemming/scratch/y/yarongc/DDPM_StrongCond256/CRPS/Janurary/*/best_overall/best_t2m_cerra_mean*.npy"
+#
+for EXP_NAME in "CNT-EXP" "EXP-1" "EXP-2" "EXP-3" "EXP-4" "EXP-5" 
+do
+
+    echo "==========================================="
+    echo "Running ${EXP_NAME}"
+    echo "==========================================="
+
+    python cerra_ML_DIFF_EXP_PLOTS_ALL_MEAN.py \
+        --npy-pattern "${EXP_PATHS[$EXP_NAME]}" \
+        --experiments "${EXP_NAME}" \
+        --zarr-path "${zarrinput}" \
+        --output-dir "${outputdir}" \
+        --variable "${variable}" \
+        --lat-min "${latmin}" \
+        --lat-max "${latmax}" \
+        --lon-min "${lonmin}" \
+        --lon-max "${lonmax}"
+
+done
+
+echo "Job completed successfully."

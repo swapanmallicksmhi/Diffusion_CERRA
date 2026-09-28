@@ -1,0 +1,22 @@
+#!/bin/bash
+#-------------------------------------------------
+#SBATCH --job-name=SCORE_plots
+#SBATCH --output=SCORE_plots.out
+#SBATCH --error=SCORE_plots.out
+#SBATCH --nodes=1
+#SBATCH --mem=60G
+#SBATCH --time=36:00:00
+#-------------------------------------------------
+
+# =================================================
+# LOAD ENVIRONMENT
+# =================================================
+module load conda
+conda activate mamba-env
+python3 ddpm_linear.py
+exit
+#-----__Data Preperation
+python3 data_prep_SDM.py
+#------PLOT---
+python3 data_plot_SDM.py
+

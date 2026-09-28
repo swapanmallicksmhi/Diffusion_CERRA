@@ -1,0 +1,24 @@
+#!/bin/bash
+#-------------------------------------------------
+#SBATCH --job-name=zarr_details
+#SBATCH --output=zarr_details.out
+#SBATCH --error=zarr_details.out
+#SBATCH --nodes=1
+#SBATCH --mem=60G
+#SBATCH --time=36:00:00
+#-------------------------------------------------
+
+# =================================================
+# LOAD ENVIRONMENT
+# =================================================
+module load conda
+conda activate mamba-env
+
+#python3 zarr_details.py -i /ec/res4/scratch/swe4281/CERRA_DATA2026/ML_DATA_ALL/2024.zarr
+python3 time_seriesplot_BOX_jan_SD.py
+#python3 zarr_spatial.py
+#python3  time_seriesplot_BOX.py
+python3 time_seriesplot_BOX_jan.py
+#python3 time_seriesplot_BOX_jan_SD.py
+#python3  time_seriesplot.py
+exit
