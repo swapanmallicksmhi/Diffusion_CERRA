@@ -5,7 +5,7 @@ set -e
 ENV_NAME="sdm"
 
 echo "==============================================="
-echo " Diffusion EDA Environment Installation"
+echo " Diffusion SDM Environment Installation"
 echo "==============================================="
 interactive -p gpu --gpus 1 -A NAISS2026-4-912-gpu
 

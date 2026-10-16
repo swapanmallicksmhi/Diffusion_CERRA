@@ -26,7 +26,7 @@ source $HOME/venvs/${ENV_NAME}/bin/activate
 input_highres_nc="/nobackup/proj/disk/hclimai/shared/Test_Domain/ECMWF-ERAINT/cropped/"
 input_lowres_nc="/nobackup/proj/disk/hclimai/shared/Test_Domain/ECMWF-ERAINT/original/"
 outputdir="/nobackup/proj/disk/hclimai/shared/Diffusion_CERRA/ZARR/PLOTS/"
-zarrpath="/nobackup/proj/disk/hclimai/shared/Diffusion_CERRA/climate_3km_v2.zarr"
+zarrpath="/nobackup/proj/disk/hclimai/shared/Diffusion_CERRA/climate_3km.zarr"
 
 # Variables
 lowres_variables="ta500 ta700 ta850 ta950"
