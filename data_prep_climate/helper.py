@@ -6,7 +6,7 @@ import cartopy.crs as ccrs
 import cartopy.feature as cfeature
 import cmocean
 from matplotlib.colors import BoundaryNorm
-from xarrayregridder import XarrayRegridder
+from regridder_xarra: import XarrayRegridder
 #import xesmf as xe
 
 
