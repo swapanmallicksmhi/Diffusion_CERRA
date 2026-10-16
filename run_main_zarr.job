@@ -17,6 +17,7 @@ conda activate /perm/swe4281/conda/envs/mamba-env
 input_nc="input_nc"
 outputdir="/lus/h2resw01/scratch/swe4281/Fuxing_WORK/ZARR/PLOTS"
 zarrpath="/lus/h2resw01/scratch/swe4281/Fuxing_WORK/climate_3km.zarr"
+/nobackup/proj/disk/hclimai/shared/Test_Domain
 
 # Variables
 variables="ta500 ta700 ta850 ta950 tas"

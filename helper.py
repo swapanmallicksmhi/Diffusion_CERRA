@@ -1,4 +1,4 @@
-import os
+import os, re
 import xarray as xr
 import numpy as np
 import matplotlib.pyplot as plt
@@ -6,55 +6,57 @@ import cartopy.crs as ccrs
 import cartopy.feature as cfeature
 import cmocean
 from matplotlib.colors import BoundaryNorm
-import xesmf as xe
+from xarrayregridder import XarrayRegridder
+#import xesmf as xe
+
 
 # ==========================================
 # 1. FILE FINDER
 # ==========================================
-def find_matching_files(era5land_dir, variables):
+def find_matching_files(in_dir, resolution, frequency, variables):
     import glob
 
     matched_files = []
+    date_pattern = re.compile(r"^\d+-\d+$")
 
     for var in variables:
 
-        pattern = os.path.join(
-            era5land_dir,
-            f"{var}_12km_6hr_*.nc"
+        var_dir = os.path.join(
+            in_dir, resolution, frequency, var
         )
 
-        files = glob.glob(pattern)
-        print(files)
+        #lowres_dir = lowres_dir + '/' + lowres_resolution + '/' + lowres_frequency + '/' + lowres_var + '/'
+        pattern = os.path.join(
+            var_dir,
+            f"{var}_{resolution}_{frequency}_*.nc"
+        )
+        print('pattern', pattern)
+        print('in_dir', in_dir)
 
-        if files:
-            for f in files:
+        files = glob.glob(pattern)
+        print('files', files)
+
+        # Filter out files that don't match the standard numeric date format
+        valid_files = []
+
+        for f in files:
+            filename = os.path.basename(f)
+            # Extract the wildcard portion after the last prefix underscore
+            prefix = f"{var}_{resolution}_{frequency}_"
+            suffix = filename.replace(prefix, "").replace(".nc", "")
+
+            if date_pattern.match(suffix):
+                valid_files.append(f)
+
+        if valid_files:
+            for f in valid_files:
                 matched_files.append(f)
                 print(f"[FOUND] {os.path.basename(f)}")
         else:
-            print(f"[MISSING] {var}")
+            print(f"[MISSING] {lowres_var}")
 
     return sorted(matched_files)
 
-
-# ==========================================
-# 2. HIGH-RESOLUTION FILE FINDER
-# ==========================================
-def find_highres_file(era5land_dir):
-    import glob
-
-    pattern = os.path.join(
-        era5land_dir,
-        "tas_3km_6hr_*.nc"
-    )
-
-    files = sorted(glob.glob(pattern))
-    print(files)
-
-    if files:
-        print(f"[FOUND 3KM] {os.path.basename(files[0])}")
-        return files[0]
-    print("[MISSING] 3-km tas file")
-    return None
 
 # ==========================================
 # 3. INTERPOLATION
@@ -90,12 +92,16 @@ def regrid_to_highres(ds, ds_highres, regridder=None, source_lat=None, source_lo
 
         print("Creating bilinear interpolation weights...")
 
-        regridder = xe.Regridder(
-            source_grid,
-            target_grid,
-            'bilinear',
-            periodic=False,
-            reuse_weights=False
+        #regridder = xe.Regridder(
+        #    source_grid,
+        #    target_grid,
+        #    'bilinear',
+        #    periodic=False,
+        #    reuse_weights=False
+        #)
+        # --- Your Direct Code Replacement ---
+        regridder = XarrayRegridder(
+            source_grid, target_grid, "bilinear", periodic=False, reuse_weights=False
         )
 
         source_lat = ds_in['lat'].values.copy()
@@ -183,9 +189,9 @@ def calculate_summary_stats(zarr_path):
 # ==========================================
 # 5. ZARR SAVING
 # ==========================================
-def save_to_zarr(zarr_path, ds_era5land):
+def save_to_zarr(zarr_path, ds_all):
 
-    ds_to_save = ds_era5land.sortby('time')
+    ds_to_save = ds_all.sortby('time')
 
     ds_to_save = ds_to_save.chunk({
         'time': 1,
@@ -205,7 +211,7 @@ def save_to_zarr(zarr_path, ds_era5land):
 # ==========================================
 # 6. CROPPING
 # ==========================================
-def crop_era5land(ds, grid_size=106):
+def crop_data(ds, grid_size=106):
 
     x_size = ds.sizes['x']
     y_size = ds.sizes['y']
@@ -239,7 +245,7 @@ def get_colormap(var):
 # ==========================================
 # 8. PLOTTING
 # ==========================================
-def plot_all(ds_era5land, idx, varname='tas_3km', title_suffix="", save_path=None):
+def plot_all(ds_all, idx, varname='tas_3km', title_suffix="", save_path=None):
 
     variable_info = {
         "ta500":          ("Air Temperature 500 hPa", "K"),
@@ -255,7 +261,7 @@ def plot_all(ds_era5land, idx, varname='tas_3km', title_suffix="", save_path=Non
         (varname, "")
     )
 
-    data = ds_era5land[varname].isel(**idx)
+    data = ds_all[varname].isel(**idx)
     data = data.where(np.isfinite(data))
 
     cmap, norm, levels = get_colormap(varname)
