@@ -1,0 +1,69 @@
+#!/bin/bash
+#SBATCH -N 1
+#SBATCH -t 00:30:00
+#SBATCH -J zarrveri
+###SBATCH -n 1  ##ntasks 
+###SBATCH --mem=256000 
+#SBATCH --chdir=/nobackup/rossby26/users/sm_fuxwa/AI/log_sdm
+#SBATCH --error=%x-%j.error 
+#SBATCH --output=%x-%j.out
+#SBATCH -A rossby
+###SBATCH --qos=low
+
+
+#set -euo pipefail
+set -x
+
+# =================================================
+# USER-DEFINED VARIABLES (DEFINE FIRST)
+# =================================================
+
+# Input / Output
+#zarrinput="${PWD}/zarr-out"
+#outputdir="${PWD}/PLOTS"
+zarrinput="/nobackup/rossby26/users/sm_fuxwa/AI/Diffusion_CERRA/climate_3km.zarr"
+outputdir="/nobackup/rossby26/users/sm_fuxwa/AI/Diffusion_CERRA/ZARR/PLOTS/"
+# =================================================
+# PREPARE OUTPUT DIRECTORY
+# =================================================
+rm -rf "${outputdir}"
+mkdir -p "${outputdir}"
+
+# Geographic domain
+latmin=45.5
+latmax=47.7
+lonmin=9.0
+lonmax=13.0
+
+# Variables to plot (DEFINE AS LIST FIRST)
+variables=(
+  ta500
+  ta700
+  ta850
+  ta950
+  tas_3km
+)
+
+# =================================================
+# LOAD ENVIRONMENT
+# =================================================
+module load Mambaforge/23.3.1-1-hpc1
+ENV_NAME='sdm'
+mamba activate ${ENV_NAME}
+
+cd $HOME/Script/Diffusion_CERRA/data_prep/zarr_analysis
+
+# =================================================
+# RUN PYTHON SCRIPT
+# =================================================
+python extract_zarr_to_png.py \
+    --zarr-path "${zarrinput}" \
+    --output-dir "${outputdir}" \
+    --variables "${variables[@]}" \
+    --lat-min "${latmin}" \
+    --lat-max "${latmax}" \
+    --lon-min "${lonmin}" \
+    --lon-max "${lonmax}"\
+    --full-bleed 
+
+echo "Job completed successfully."

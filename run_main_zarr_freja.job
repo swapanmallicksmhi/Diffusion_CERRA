@@ -14,7 +14,7 @@ set -evx
 
 module load Mambaforge/23.3.1-1-hpc1
 ENV_NAME='sdm'
-mamba activate sdm
+mamba activate ${ENV_NAME}
 
 # Paths
 input_highres_nc="/nobackup/rossby26/users/sm_fuxwa/AI/Test_Domain/cropped/ECMWF-ERAINT"
