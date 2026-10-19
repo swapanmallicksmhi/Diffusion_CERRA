@@ -23,8 +23,8 @@ source $HOME/venvs/${ENV_NAME}/bin/activate
 #module load ESMF/8.9.0
 
 # Paths
-input_highres_nc="/nobackup/proj/disk/hclimai/shared/Test_Domain/ECMWF-ERAINT/cropped/"
-input_lowres_nc="/nobackup/proj/disk/hclimai/shared/Test_Domain/ECMWF-ERAINT/original/"
+input_highres_nc="/nobackup/proj/disk/hclimai/shared/Test_Domain/cropped/ECMWF-ERAINT/"
+input_lowres_nc="/nobackup/proj/disk/hclimai/shared/Test_Domain/original/ECMWF-ERAINT/"
 outputdir="/nobackup/proj/disk/hclimai/shared/Diffusion_CERRA/ZARR/PLOTS/"
 zarrpath="/nobackup/proj/disk/hclimai/shared/Diffusion_CERRA/climate_3km.zarr"
 
