@@ -260,7 +260,7 @@ def main():
 
     # Rename coordinates/dimensions before saving to Zarr
     ds_c_sub = ds_c_sub.rename({
-        'time': 'time_valid',
+        'time': 'valid_time',
         'lat': 'latitude',
         'lon': 'longitude'
     })

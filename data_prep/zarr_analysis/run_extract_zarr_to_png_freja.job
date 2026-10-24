@@ -21,8 +21,8 @@ set -x
 # Input / Output
 #zarrinput="${PWD}/zarr-out"
 #outputdir="${PWD}/PLOTS"
-zarrinput="/nobackup/rossby26/users/sm_fuxwa/AI/Diffusion_SDM/climate_3km.zarr"
-outputdir="/nobackup/rossby26/users/sm_fuxwa/AI/Diffusion_SDM/ZARR/PLOTS/"
+zarrinput="/nobackup/rossby26/users/sm_fuxwa/AI/Diffusion_SDM/climate_3km_v2.zarr"
+outputdir="/nobackup/rossby26/users/sm_fuxwa/AI/Diffusion_SDM/ZARR/PLOTS_v2/"
 # =================================================
 # PREPARE OUTPUT DIRECTORY
 # =================================================

@@ -165,7 +165,7 @@ def calculate_summary_stats(zarr_path):
     var_names = []
 
     for var in ds.data_vars:
-        if np.issubdtype(ds[var].dtype, np.number) and 'time_valid' in ds[var].dims:
+        if np.issubdtype(ds[var].dtype, np.number) and 'valid_time' in ds[var].dims:
             d = ds[var]
 
             stats['min'].append(float(d.min(skipna=True)))
@@ -190,10 +190,10 @@ def calculate_summary_stats(zarr_path):
 # ==========================================
 def save_to_zarr(zarr_path, ds_all):
 
-    ds_to_save = ds_all.sortby('time_valid')
+    ds_to_save = ds_all.sortby('valid_time')
 
     ds_to_save = ds_to_save.chunk({
-        'time_valid': 1,
+        'valid_time': 1,
         'y': -1,
         'x': -1
     })
