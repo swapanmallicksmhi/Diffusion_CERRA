@@ -92,16 +92,27 @@ def regrid_to_highres(ds, ds_highres, regridder=None, source_lat=None, source_lo
 
         print("Creating bilinear interpolation weights...")
 
-        regridder = xe.Regridder(
-            source_grid,
-            target_grid,
-            'bilinear',
-            periodic=False,
-            reuse_weights=False
-        )
-        #regridder = XarrayRegridder(
-        #    source_grid, target_grid, "bilinear", periodic=False, reuse_weights=False
-        #)
+        try:
+            import xesmf as xe
+
+            regridder = xe.Regridder(
+                source_grid,
+                target_grid,
+                "bilinear",
+                periodic=False,
+                reuse_weights=False
+            )
+            print("Using xesmf regridder.")
+
+        except (ImportError, ModuleNotFoundError):
+            regridder = XarrayRegridder(
+                source_grid,
+                target_grid,
+                "bilinear",
+                periodic=False,
+                reuse_weights=False
+            )
+            print("xesmf not found. Falling back to XarrayRegridder.")
 
         source_lat = ds_in['lat'].values.copy()
         source_lon = ds_in['lon'].values.copy()
