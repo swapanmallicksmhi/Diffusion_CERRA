@@ -19,17 +19,18 @@ mamba activate ${ENV_NAME}
 # Paths
 input_highres_nc="/nobackup/rossby26/users/sm_fuxwa/AI/Test_Domain/cropped/ECMWF-ERAINT"
 input_lowres_nc="/nobackup/rossby26/users/sm_fuxwa/AI/Test_Domain/original/ECMWF-ERAINT"
-outputdir="/nobackup/rossby26/users/sm_fuxwa/AI/Diffusion_CERRA/ZARR/PLOTS/"
-zarrpath="/nobackup/rossby26/users/sm_fuxwa/AI/Diffusion_CERRA/climate_3km.zarr"
+outputdir="/nobackup/rossby26/users/sm_fuxwa/AI/Diffusion_SDM/ZARR/PLOTS/"
+zarrpath="/nobackup/rossby26/users/sm_fuxwa/AI/Diffusion_SDM/climate_3km_v2.zarr"
 
 # Variables
 lowres_variables="ta500 ta700 ta850 ta950"
+#lowres_variables="ta500" # ta700 ta850 ta950"
 highres_variables="tas"
 
 mkdir -p ${outputdir}
 rm -rf ${zarrpath}
 
-cd $HOME/Script/Diffusion_CERRA
+cd $HOME/Script/Diffusion_CERRA/data_prep_climate/
 # Run script
 python3 main_zarr.py \
     --grid_size 106 \

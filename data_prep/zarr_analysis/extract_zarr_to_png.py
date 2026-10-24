@@ -61,47 +61,17 @@ def plot_variable(ds, var_name, time_idx, output_dir,
 
     da = ds[var_name]
 
-    time_dim = (
-        "time"
-        if "time" in da.dims
-        else ("valid_time" if "valid_time" in da.dims else None)
-    )
-    if time_dim and time_dim in da.dims:
-        da = da.isel({time_dim: time_idx})
-    #if "valid_time" in da.dims:
-    #    da = da.isel(valid_time=time_idx)
+    if "valid_time" in da.dims:
+        da = da.isel(valid_time=time_idx)
     if "number" in da.dims:
         da = da.isel(number=0)
 
-    #lat2d = ds["latitude"]
-    #lon2d = ds["longitude"]
-    # Fallback to check for 'lat'/'lon' or 'latitude'/'longitude'
-    lat_name = (
-        "lat"
-        if "lat" in ds
-        else ("latitude" if "latitude" in ds else "y")
-    )
-    lon_name = (
-        "lon"
-        if "lon" in ds
-        else ("longitude" if "longitude" in ds else "x")
-    )
+    lat2d = ds["latitude"]
+    lon2d = ds["longitude"]
 
-    lat2d = ds[lat_name]
-    lon2d = ds[lon_name]
-
-    subset_res = subset_domain_2d(
-        da, lat2d, lon2d, lat_min, lat_max, lon_min, lon_max
-    )
-    if len(subset_res) == 3:
-        da, lat2d_sub, lon2d_adjusted = subset_res
-    else:
-        da, lon2d_adjusted = subset_res
-        lat2d_sub = lat2d  # fallback if function only clips da & lon2d
-
-    #da, lon2d_adjusted = subset_domain_2d(da, lat2d, lon2d,
-    #                                     lat_min, lat_max,
-    #                                     lon_min, lon_max)
+    da, lon2d_adjusted = subset_domain_2d(da, lat2d, lon2d,
+                                         lat_min, lat_max,
+                                         lon_min, lon_max)
 
     if np.isnan(da.values).all():
         print(f"Skipping {var_name} — no data in selected domain")
@@ -197,18 +167,9 @@ def plot_variable_plan(ds, var_name, time_idx, output_dir,
     lat2d = ds["latitude"]
     lon2d = ds["longitude"]
 
-    subset_res = subset_domain_2d(
-        da, lat2d, lon2d, lat_min, lat_max, lon_min, lon_max
-    )
-    if len(subset_res) == 3:
-        da, lat2d_sub, lon2d_adjusted = subset_res
-    else:
-        da, lon2d_adjusted = subset_res
-        lat2d_sub = lat2d  # fallback if function only clips da & lon2d
-
-    #da, lon2d_adjusted = subset_domain_2d(da, lat2d, lon2d,
-    #                                     lat_min, lat_max,
-    #                                     lon_min, lon_max)
+    da, lon2d_adjusted = subset_domain_2d(da, lat2d, lon2d,
+                                         lat_min, lat_max,
+                                         lon_min, lon_max)
 
     if np.isnan(da.values).all():
         print(f"Skipping {var_name} plan view — no data in selected domain")
@@ -404,31 +365,8 @@ def main():
     print(f"Opening Zarr store: {args.zarr_path}")
     ds = xr.open_dataset(args.zarr_path, engine="zarr")
 
-    # Identify latitude name
-    lat_name = (
-        "lat"
-        if "lat" in ds
-        else ("latitude" if "latitude" in ds else "y")
-    )
-    lon_name = (
-        "lon"
-        if "lon" in ds
-        else ("longitude" if "longitude" in ds else "x")
-    )
-
-    print(
-        "Latitude range:",
-        float(ds[lat_name].min()),
-        float(ds[lat_name].max()),
-    )
-    print(
-        "Longitude range:",
-        float(ds[lon_name].min()),
-        float(ds[lon_name].max()),
-    )
-
-    #print("Latitude range:", float(ds.latitude.min()), float(ds.latitude.max()))
-    #print("Longitude range:", float(ds.longitude.min()), float(ds.longitude.max()))
+    print("Latitude range:", float(ds.latitude.min()), float(ds.latitude.max()))
+    print("Longitude range:", float(ds.longitude.min()), float(ds.longitude.max()))
 
     n_times = ds.sizes["valid_time"] if "valid_time" in ds.dims else 1
 

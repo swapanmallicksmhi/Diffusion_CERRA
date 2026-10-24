@@ -6,8 +6,8 @@ import cartopy.crs as ccrs
 import cartopy.feature as cfeature
 import cmocean
 from matplotlib.colors import BoundaryNorm
-from regridder_xarra: import XarrayRegridder
-#import xesmf as xe
+from regridder_xarray import XarrayRegridder
+import xesmf as xe
 
 
 # ==========================================
@@ -76,15 +76,15 @@ def regrid_to_highres(ds, ds_highres, regridder=None, source_lat=None, source_lo
 
     source_grid = xr.Dataset(
         {
-            'lat': (('y', 'x'), ds_in['lat'].values),
-            'lon': (('y', 'x'), ds_in['lon'].values)
+            'latitude': (('y', 'x'), ds_in['lat'].values),
+            'longitude': (('y', 'x'), ds_in['lon'].values)
         }
     )
 
     target_grid = xr.Dataset(
         {
-            'lat': (('y', 'x'), ds_highres['lat'].values),
-            'lon': (('y', 'x'), ds_highres['lon'].values)
+            'latitude': (('y', 'x'), ds_highres['lat'].values),
+            'longitude': (('y', 'x'), ds_highres['lon'].values)
         }
     )
 
@@ -92,17 +92,16 @@ def regrid_to_highres(ds, ds_highres, regridder=None, source_lat=None, source_lo
 
         print("Creating bilinear interpolation weights...")
 
-        #regridder = xe.Regridder(
-        #    source_grid,
-        #    target_grid,
-        #    'bilinear',
-        #    periodic=False,
-        #    reuse_weights=False
-        #)
-        # --- Your Direct Code Replacement ---
-        regridder = XarrayRegridder(
-            source_grid, target_grid, "bilinear", periodic=False, reuse_weights=False
+        regridder = xe.Regridder(
+            source_grid,
+            target_grid,
+            'bilinear',
+            periodic=False,
+            reuse_weights=False
         )
+        #regridder = XarrayRegridder(
+        #    source_grid, target_grid, "bilinear", periodic=False, reuse_weights=False
+        #)
 
         source_lat = ds_in['lat'].values.copy()
         source_lon = ds_in['lon'].values.copy()
@@ -125,8 +124,8 @@ def regrid_to_highres(ds, ds_highres, regridder=None, source_lat=None, source_lo
         coords={
             'y': ds_in['y'],
             'x': ds_in['x'],
-            'lat': (('y', 'x'), ds_in['lat'].values),
-            'lon': (('y', 'x'), ds_in['lon'].values)
+            'latitude': (('y', 'x'), ds_in['lat'].values),
+            'longitude': (('y', 'x'), ds_in['lon'].values)
         }
     )
 
@@ -166,7 +165,7 @@ def calculate_summary_stats(zarr_path):
     var_names = []
 
     for var in ds.data_vars:
-        if np.issubdtype(ds[var].dtype, np.number) and 'time' in ds[var].dims:
+        if np.issubdtype(ds[var].dtype, np.number) and 'time_valid' in ds[var].dims:
             d = ds[var]
 
             stats['min'].append(float(d.min(skipna=True)))
@@ -191,10 +190,10 @@ def calculate_summary_stats(zarr_path):
 # ==========================================
 def save_to_zarr(zarr_path, ds_all):
 
-    ds_to_save = ds_all.sortby('time')
+    ds_to_save = ds_all.sortby('time_valid')
 
     ds_to_save = ds_to_save.chunk({
-        'time': 1,
+        'time_valid': 1,
         'y': -1,
         'x': -1
     })
@@ -278,8 +277,8 @@ def plot_all(ds_all, idx, varname='tas_3km', title_suffix="", save_path=None):
 
     if norm is not None:
         mesh = ax.pcolormesh(
-            data['lon'],
-            data['lat'],
+            data['longitude'],
+            data['latitude'],
             data,
             transform=ccrs.PlateCarree(),
             shading='auto',
@@ -288,8 +287,8 @@ def plot_all(ds_all, idx, varname='tas_3km', title_suffix="", save_path=None):
         )
     else:
         mesh = ax.pcolormesh(
-            data['lon'],
-            data['lat'],
+            data['longitude'],
+            data['latitude'],
             data,
             transform=ccrs.PlateCarree(),
             shading='auto',

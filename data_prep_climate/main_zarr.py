@@ -45,7 +45,7 @@ def preprocess_dataset(
     if drop_vars is None:
         drop_vars = ["plev", "height"]
 
-    coords_to_set = [c for c in ["lat", "lon"] if c in ds]
+    coords_to_set = [c for c in ["latitude", "longitude"] if c in ds]
     if coords_to_set:
         ds = ds.set_coords(coords_to_set)
 
@@ -257,6 +257,13 @@ def main():
         "tas_12km_interp",
     ]
     generate_plots(ds_c_sub, output_dir, final_variables)
+
+    # Rename coordinates/dimensions before saving to Zarr
+    ds_c_sub = ds_c_sub.rename({
+        'time': 'time_valid',
+        'lat': 'latitude',
+        'lon': 'longitude'
+    })
 
     save_to_zarr(zarr_path=zarr_path, ds_all=ds_c_sub)
     print(f"Saved Zarr dataset to: {zarr_path}")
