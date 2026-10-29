@@ -1,0 +1,104 @@
+#!/bin/bash
+#SBATCH -N 1
+#SBATCH -t 00:30:00
+#SBATCH -J sdm
+###SBATCH -n 1  ##ntasks 
+###SBATCH --mem=256000 
+#SBATCH --chdir=/nobackup/rossby26/users/sm_fuxwa/AI/log_sdm
+#SBATCH --error=%x-%j.error 
+#SBATCH --output=%x-%j.out
+#SBATCH -A rossby
+###SBATCH --qos=low
+
+set -evx
+
+module load Mambaforge/23.3.1-1-hpc1
+ENV_NAME='sdm'
+mamba activate ${ENV_NAME}
+
+# Change the correct path in all the places.
+PROJECT_ROOT="$HOME/Script/Diffusion_CERRA/diffusion"
+# project root for imports
+export PYTHONPATH=${PROJECT_ROOT}:${PYTHONPATH:-}
+
+# CUDA-aware MPI & fragmentation mitigation
+export OMPI_MCA_opal_cuda_support=true
+export OMPI_MCA_pml=ucx
+export UCX_MEMTYPE_CACHE=n
+export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
+export MASTER_PORT=$((10000 + RANDOM % 50000))
+
+INPUT_VARS=(
+  ta500
+  ta700
+  ta850
+  ta950
+)
+
+TARGET_VARS=(
+  tas_3km
+)
+
+USE_SEASONAL=1
+SEASONAL_CHANNELS=12
+
+SEASONAL_FLAGS=""
+if [ "${USE_SEASONAL}" = "1" ]; then
+  SEASONAL_FLAGS="--add_seasonal_cond --seasonal_channels ${SEASONAL_CHANNELS}"
+fi
+
+cd ${PROJECT_ROOT}
+
+SDE_OBJ="epsilon" #SDE_OBJ="score_snr" or "epsilon"
+
+cd src_diffusion
+rm -f diffusion_sde.py
+if [ "${SDE_OBJ}" = "epsilon" ]; then
+    ln -sf diffusion_sde_epsilon.py diffusion_sde.py
+elif [ "${SDE_OBJ}" = "score_snr" ]; then
+    ln -sf diffusion_sde_score_snr.py diffusion_sde.py
+else
+    echo "Unknown SDE_OBJ: ${SDE_OBJ}"
+    exit 1
+fi
+rm -rf __pycache__
+cd ..
+
+rm -rf __pycache__
+
+
+# Paths
+TYPE="SDM"
+INPUT="/nobackup/rossby26/users/sm_fuxwa/AI/Diffusion_CERRA/climate_3km.zarr"
+OUTPUT="/nobackup/rossby26/users/sm_fuxwa/AI/Diffusion_CERRA/SDM/${TYPE}_seasonalStrongCond_noWind_Sigmoid"
+rm -rf ${OUTPUT}
+mkdir -p ${OUTPUT}
+echo  ${OUTPUT}
+
+# Lowered batch + microbatch + enable fp16
+MODEL_FLAGS="--save_interval 2000 --image_size 256 --num_channels 64 --diffusion_type vp_sde --beta_min 0.1 --beta_max 20.0 --sampling_eps 1e-3 --cond_dropout_prob 0.1 --cfg_guidance_scale 1.0"
+
+if [ "${SDE_OBJ}" = "epsilon" ]; then
+    SDE_FLAGS="--sde_loss_type score_mse"
+elif [ "${SDE_OBJ}" = "score_snr" ]; then
+    SDE_FLAGS="--sde_loss_type snr_weighted"
+fi
+
+TOTALSTEP="--steps 70000"
+DIFFUSION_STEPS=4000
+TIMESTEP_RESPACING=""
+TRAIN_FLAGS="--lr 5e-5 --batch_size 16 --microbatch 4 --use_fp16 False"
+
+mkdir -p $OUTPUT
+
+# Launch
+python3 train_ml/Train_main.py \
+  --data_dir $INPUT \
+  --TRAIN_OUT $OUTPUT \
+  --input_vars "${INPUT_VARS[@]}" \
+  --target_vars "${TARGET_VARS[@]}" \
+  ${SEASONAL_FLAGS} \
+  ${SDE_FLAGS} \
+  --diffusion_steps ${DIFFUSION_STEPS} \
+  --timestep_respacing "${TIMESTEP_RESPACING}" \
+  $MODEL_FLAGS $TOTALSTEP $TRAIN_FLAGS

@@ -1,0 +1,48 @@
+#!/bin/bash
+#SBATCH -A NAISS2026-4-912-gpu
+#SBATCH -N 1
+#SBATCH -t 00:30:00
+#SBATCH -J zarrconv
+#SBATCH --chdir=/nobackup/proj/disk/hclimai/personal/fuxing/log/log_diffusion_cerra/
+#SBATCH --error=%x-%j.error 
+#SBATCH --output=%x-%j.out
+#SBATCH -p gpu
+###SBATCH --ntasks-per-node=4
+###SBATCH --cpus-per-task=16
+#SBATCH --gpus-per-node=1
+###SBATCH --mem-per-gpu=50G
+###ecinteractive -g
+
+set -evx
+
+#module load conda
+#conda activate /perm/swe4281/conda/envs/mamba-env
+ENV_NAME='sdm'
+source $HOME/venvs/${ENV_NAME}/bin/activate
+#module load ESMF
+#module load ESMF/8.9.0
+
+# Paths
+input_highres_nc="/nobackup/proj/disk/hclimai/shared/Test_Domain/cropped/ECMWF-ERAINT/"
+input_lowres_nc="/nobackup/proj/disk/hclimai/shared/Test_Domain/original/ECMWF-ERAINT/"
+outputdir="/nobackup/proj/disk/hclimai/shared/Diffusion_CERRA/ZARR/PLOTS/"
+zarrpath="/nobackup/proj/disk/hclimai/shared/Diffusion_CERRA/climate_3km.zarr"
+
+# Variables
+lowres_variables="ta500 ta700 ta850 ta950"
+highres_variables="tas"
+
+mkdir -p ${outputdir}
+rm -rf ${zarrpath}
+
+cd $HOME/Diffusion_CERRA
+# Run script
+python3 main_zarr.py \
+    --grid_size 106 \
+    --lowres_dir ${input_lowres_nc} \
+    --highres_dir ${input_highres_nc} \
+    --output_dir ${outputdir} \
+    --zarr_path ${zarrpath} \
+    --lowres_variables ${lowres_variables} \
+    --highres_variables ${highres_variables}
+#    --era5land_dir ${input_nc} \
