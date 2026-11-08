@@ -127,26 +127,39 @@ class DataLoader:
         """Find index for a specific datetime"""
         import pandas as pd
         import numpy as np
-        
-        if 'valid_time' not in self.store:
-            raise ValueError("No 'valid_time' variable found in Zarr store")
-        
-        time_data = self.store['valid_time'][:]
-        units = self.store['valid_time'].attrs.get('units', 'seconds since 1970-01-01')
-        
-        # Convert to datetime
-        if 'seconds since' in units:
-            datetimes = pd.to_datetime(time_data, unit='s', origin='unix', utc=True)
+        import xarray as xr
+
+        ds = xr.open_zarr(self.zarr_path)
+
+        if 'valid_time' in ds.coords:
+            time_data = ds['valid_time'].values
+        elif 'valid_time' in ds:
+            time_data = ds['valid_time'].values
+        elif 'time' in ds.coords:
+            time_data = ds['time'].values
+        elif 'time' in ds:
+            time_data = ds['time'].values
         else:
-            datetimes = pd.to_datetime(time_data, unit='h', origin='unix', utc=True)
-        
-        target_ts = pd.Timestamp(target_datetime, tz='UTC')
+            ds.close()
+            raise ValueError("No 'valid_time' or 'time' variable found in Zarr store")
+
+        # Convert to datetime
+        datetimes = pd.to_datetime(time_data, utc=True)
+
+        target_ts = pd.Timestamp(target_datetime)
+        if target_ts.tzinfo is None:
+            target_ts = target_ts.tz_localize('UTC')
+        else:
+            target_ts = target_ts.tz_convert('UTC')
+
         time_diffs = np.abs((datetimes - target_ts).total_seconds())
-        closest_idx = np.argmin(time_diffs)
+        closest_idx = int(np.argmin(time_diffs))
         closest_datetime = datetimes[closest_idx]
-        
+
+        ds.close()
+
         return closest_idx, closest_datetime
-    
+
     def load_real_targets(self, datetime_str, target_vars):
         """Load real CERRA data for the given datetime"""
         idx, actual_dt = self.find_index_by_datetime(datetime_str)
@@ -212,16 +225,25 @@ class ValidationMetrics:
                     
                     # Calculate pixel-wise difference
                     diff = sample_np - real_np
-                    abs_diff = np.abs(diff)
-                    
+
+                    # Use only valid finite points
+                    valid_mask = np.isfinite(sample_np) & np.isfinite(real_np)
+
+                    if not np.any(valid_mask):
+                        print(f"  Warning: No valid points for sample {sample_idx}, variable {var_name}")
+                        continue
+
+                    valid_diff = diff[valid_mask]
+                    abs_diff = np.abs(valid_diff)
+
                     # Calculate statistics
-                    rmse = np.sqrt(np.mean(diff**2))
+                    rmse = np.sqrt(np.mean(valid_diff**2))
                     mae = np.mean(abs_diff)
                     max_diff = np.max(abs_diff)
-                    min_diff = np.min(diff)
-                    max_positive = np.max(diff)
-                    max_negative = np.min(diff)
-                    
+                    min_diff = np.min(valid_diff)
+                    max_positive = np.max(valid_diff)
+                    max_negative = np.min(valid_diff)
+
                     # Store metrics
                     sample_metrics['per_variable'][var_name] = {
                         'rmse': float(rmse),
@@ -230,8 +252,8 @@ class ValidationMetrics:
                         'min_error': float(min_diff),
                         'max_overestimate': float(max_positive),
                         'max_underestimate': float(max_negative),
-                        'mean_error': float(np.mean(diff)),
-                        'std_error': float(np.std(diff))
+                        'mean_error': float(np.mean(valid_diff)),
+                        'std_error': float(np.std(valid_diff))
                     }
                     
                     rmse_sum += rmse
@@ -321,13 +343,19 @@ class ValidationMetrics:
                 f.write("-" * 80 + "\n\n")
                 
                 best = self.metrics['best_samples']
-                f.write(f"Best Overall Sample: {best['overall']['sample_idx']:03d} ")
-                f.write(f"(RMSE: {best['overall']['rmse']:.6f})\n\n")
-                
+                if best['overall']['sample_idx'] is not None:
+                    f.write(f"Best Overall Sample: {best['overall']['sample_idx']:03d} ")
+                    f.write(f"(RMSE: {best['overall']['rmse']:.6f})\n\n")
+                else:
+                    f.write("Best Overall Sample: None\n\n")
+
                 for var, info in best['per_variable'].items():
-                    f.write(f"Best Sample for {var}: {info['sample_idx']:03d} ")
-                    f.write(f"(RMSE: {info['rmse']:.6f})\n")
-        
+                    if info['sample_idx'] is not None:
+                        f.write(f"Best Sample for {var}: {info['sample_idx']:03d} ")
+                        f.write(f"(RMSE: {info['rmse']:.6f})\n")
+                    else:
+                        f.write(f"Best Sample for {var}: None\n")
+
         print(f"  Validation metrics saved to: {filepath}")
         
         # Also save as JSON for programmatic access
@@ -694,9 +722,7 @@ def main():
     
     #new_add: multiple variables
     auto_in_channels = len(args.target_vars)
-    auto_cond_channels = len(args.input_vars) + (
-        args.seasonal_channels if args.add_seasonal_cond else 0
-    )
+    auto_cond_channels = len(args.input_vars)
 
     print(f"Auto evaluation in_channels = {auto_in_channels}")
     print(f"Auto evaluation cond_channels = {auto_cond_channels}")
